@@ -1,0 +1,18 @@
+{
+  "generator": "Built-in ImageGen",
+  "generatedAt": "2026-10-28",
+  "assets": [
+    {
+      "file": "frontend/public/assets/chatdidit-hero.png",
+      "prompt": "Use case: stylized-concept. Asset type: premium web game dashboard hero illustration, landscape 3:2 composition. Primary request: custom original artwork for ChatDidIt, a Twitch audience deception trivia game. Scene: sculptural abstract game show objects floating in a clean warm pale acid lime studio with subtle paper grain. Subject: a large chunky glossy black rounded chat speech bubble wearing a little theatrical mischievous expression formed by two minimal white eyes, paired with an ivory sculptural question mark, small lime and lavender rounded chat tiles, an orange five-point star and orbital curved wire. Style: premium editorial 3D product illustration, physically rendered soft shadows, tactile matte rubber and glossy ceramic, sophisticated playful not childish. Composition: main subject right of center, sparse objects, lots of clean empty lime space left; no interface, no typography, no letters, no logos, no watermarks. Palette warm acid yellow green #dfff70, graphite black, cream, small orange and lavender accents. Wide polished hero image, beautifully art directed."
+    },
+    {
+      "file": "frontend/public/assets/mode-facts.png",
+      "prompt": "Use case: stylized-concept. Asset type: square mode card art for a premium audience deception trivia game. A sculptural chunky ivory question mark levitating above a small black spherical globe, with two subtle acid lime rings and a little orange star. Rich lavender purple studio backdrop, tactile ceramic and rubber materials, premium editorial 3D rendering, playful sophisticated game show look. Centered clean composition, soft studio shadows, generous negative space, no words or interface, no logos, no watermark."
+    },
+    {
+      "file": "frontend/public/assets/mode-definitions.png",
+      "prompt": "Use case: stylized-concept. Asset type: square mode card art for a premium audience deception word game. A small sculptural stack of cream dictionary books with black covers, with a lime green chunky chat bubble rising from the open top book and a tiny lavender floating asterisk. Warm apricot orange studio background, premium editorial 3D rendering, matte paper and rubber textures, sophisticated clean playful look. Centered clean composition, soft studio shadows, generous negative space, absolutely no readable words no logos no watermark."
+    }
+  ]
+}

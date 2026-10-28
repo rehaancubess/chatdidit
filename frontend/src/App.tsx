@@ -1,0 +1,1543 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ArrowDownLeft,
+  ArrowLeft,
+  ArrowRight,
+  AudioLines,
+  BookOpen,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  CircleHelp,
+  Copy,
+  ExternalLink,
+  Eye,
+  Flag,
+  Gamepad2,
+  Layers3,
+  LayoutDashboard,
+  Link2,
+  LoaderCircle,
+  LogOut,
+  Maximize2,
+  MessageCircle,
+  MoreHorizontal,
+  Pause,
+  Play,
+  Plus,
+  Radio,
+  Send,
+  Settings2,
+  ShieldCheck,
+  Shuffle,
+  SkipForward,
+  Sparkles,
+  Trophy,
+  Twitch,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react';
+
+type Mode = 'fact' | 'definition' | 'mixed';
+type User = { id: string; displayName: string; role?: string; demo?: boolean; isDemo?: boolean };
+type Me = {
+  user: User | null;
+  demoEnabled: boolean;
+  twitchConfigured: boolean;
+  aiConfigured: boolean;
+};
+type Game = {
+  id: string;
+  channelId: string;
+  phase: string;
+  mode: string;
+  round: number;
+  totalRounds: number;
+  question?: { prompt: string; category: string };
+  options: { id: string; text: string }[];
+  deadline?: number | null;
+  paused: boolean;
+  remainingMs?: number;
+  submissionCount: number;
+  scores: { chat: number; streamer: number };
+  selectedOptionId?: string;
+  reveal?: {
+    correctOptionId: string;
+    answer: string;
+    explanation: string;
+    sourceUrl: string;
+    fooled: boolean;
+    contributors: unknown[];
+  };
+  aiMode?: string;
+  canControl?: boolean;
+  ownSubmission?: { text: string; updatedAt: number };
+};
+type Config = { mode: Mode; rounds: number; submissionSeconds: number; deceptionSeconds: number };
+const defaultConfig: Config = {
+  mode: 'mixed',
+  rounds: 5,
+  submissionSeconds: 30,
+  deceptionSeconds: 25,
+};
+const modes = [
+  {
+    id: 'fact' as Mode,
+    label: 'Fact or Fiction',
+    eyebrow: 'THE ORIGINAL',
+    description: 'Weird facts. Convincing lies. One very suspicious streamer.',
+    art: '/assets/mode-facts.png',
+    tone: 'orange',
+    icon: CircleHelp,
+  },
+  {
+    id: 'definition' as Mode,
+    label: 'Define That!',
+    eyebrow: 'WORD ON THE STREET',
+    description: 'Real words. Completely made-up meanings. Can you tell?',
+    art: '/assets/mode-definitions.png',
+    tone: 'purple',
+    icon: BookOpen,
+  },
+  {
+    id: 'mixed' as Mode,
+    label: 'Mixed Bag',
+    eyebrow: 'KEEP THEM GUESSING',
+    description: 'A little of everything. A whole lot of second-guessing.',
+    art: '/assets/chatdidit-hero.png',
+    tone: 'green',
+    icon: Shuffle,
+  },
+];
+const phaseLabels: Record<string, string> = {
+  lobby: 'Waiting for the show',
+  question: 'The question',
+  submission: 'Make your lie',
+  selection: 'Finding the best lies',
+  deception: 'Convince the streamer',
+  locked: 'Answer locked',
+  reveal: 'The moment of truth',
+  finished: 'That’s a wrap',
+};
+async function api<T>(path: string, body?: unknown): Promise<T> {
+  const r = await fetch(path, {
+    credentials: 'include',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    method: body ? 'POST' : 'GET',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r
+    .json()
+    .catch(() => ({ error: 'The server returned an unexpected response.' }));
+  if (!r.ok)
+    throw Object.assign(
+      new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : data.error?.message || data.message || 'Something went wrong. Please try again.',
+      ),
+      { status: r.status, code: data.code, needsAuthorization: data.needsAuthorization },
+    );
+  return data;
+}
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <a className={`brand ${compact ? 'brand-compact' : ''}`} href="/" aria-label="ChatDidIt home">
+      <span className="brand-symbol">
+        <MessageCircle size={23} fill="currentColor" strokeWidth={1.5} />
+        <span>×</span>
+      </span>
+      <span>
+        ChatDidIt<span className="brand-dot">.</span>
+      </span>
+    </a>
+  );
+}
+function App() {
+  const [path, setPath] = useState(location.pathname);
+  const [me, setMe] = useState<Me>({
+    user: null,
+    demoEnabled: false,
+    twitchConfigured: false,
+    aiConfigured: false,
+  });
+  const [meLoaded, setMeLoaded] = useState(false);
+  const [tab, setTab] = useState('overview');
+  const [modal, setModal] = useState(false);
+  const [config, setConfig] = useState<Config>(defaultConfig);
+  const [working, setWorking] = useState(false);
+  const [toast, setToast] = useState('');
+  const [help, setHelp] = useState(false);
+  useEffect(() => {
+    const fn = () => setPath(location.pathname);
+    addEventListener('popstate', fn);
+    return () => removeEventListener('popstate', fn);
+  }, []);
+  useEffect(() => {
+    api<Me>('/api/me')
+      .then(setMe)
+      .catch((e) => setToast(e.message))
+      .finally(() => setMeLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (toast) {
+      const id = setTimeout(() => setToast(''), 6000);
+      return () => clearTimeout(id);
+    }
+  }, [toast]);
+  function navigate(url: string) {
+    history.pushState({}, '', url);
+    setPath(url);
+    window.scrollTo(0, 0);
+  }
+  async function ensureDemo() {
+    const data = await api<{ user: User }>('/api/demo/session', {});
+    setMe((prev) => ({ ...prev, user: data.user }));
+    return data.user;
+  }
+  async function create() {
+    setWorking(true);
+    try {
+      if (!me.user) {
+        if (me.demoEnabled) await ensureDemo();
+        else {
+          location.href = '/auth/twitch?returnTo=/';
+          return;
+        }
+      }
+      const result = await api<{ gameId: string; state: Game }>('/api/games', config);
+      localStorage.setItem('chatdidit-room', result.gameId);
+      setModal(false);
+      navigate('/host/' + result.gameId);
+    } catch (e) {
+      setToast((e as Error).message);
+    } finally {
+      setWorking(false);
+    }
+  }
+  function openCreate(mode: Mode = 'mixed') {
+    setConfig((c) => ({ ...c, mode }));
+    setModal(true);
+  }
+  function goTab(next: string) {
+    if (next === 'live') {
+      const id = localStorage.getItem('chatdidit-room');
+      if (id) {
+        navigate('/host/' + id);
+        return;
+      }
+      openCreate();
+      return;
+    }
+    if (path !== '/') navigate('/');
+    setTab(next);
+  }
+  const match = path.match(/^\/(host|play|overlay)\/([^/]+)$/);
+  const isOverlay = match?.[1] === 'overlay';
+  return (
+    <div className={isOverlay ? 'app overlay-app' : 'app'}>
+      {!isOverlay && match?.[1] !== 'play' && (
+        <aside className="sidebar">
+          <Brand />
+          <div className="workspace-label">YOUR CONTROL ROOM</div>
+          <nav aria-label="Main navigation">
+            {[
+              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+              { id: 'live', label: 'Live room', icon: Radio },
+              { id: 'questions', label: 'Question bank', icon: BookOpen },
+              { id: 'hall', label: 'Hall of lies', icon: Trophy },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => goTab(id)}
+                className={`nav-item ${(match && id === 'live') || (!match && tab === id) ? 'active' : ''}`}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+                {id === 'live' && <span className="nav-dot" />}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-promo">
+            <span className="mini-star">
+              <Sparkles size={18} />
+            </span>
+            <h4>
+              Built for your
+              <br />
+              main-character moment.
+            </h4>
+            <p>
+              Your community brings the chaos.
+              <br />
+              You bring the poker face.
+            </p>
+            <span className="promo-line" />
+          </div>
+          <div className="sidebar-bottom">
+            <button className="nav-item" onClick={() => setHelp(true)}>
+              <CircleHelp size={18} />
+              How to play
+              <ArrowDownLeft size={15} className="push" />
+            </button>
+            <div className="profile">
+              <div className="avatar">{me.user?.displayName?.slice(0, 1).toUpperCase() || 'C'}</div>
+              <div>
+                <strong>{me.user?.displayName || 'Your channel'}</strong>
+                <span>{me.user ? 'Creator workspace' : 'Ready when you are'}</span>
+              </div>
+              <button
+                className="icon-button"
+                title={me.user ? 'Sign out' : 'Connect Twitch'}
+                aria-label={me.user ? 'Sign out' : 'Connect Twitch'}
+                onClick={async () => {
+                  if (me.user) {
+                    try {
+                      await api('/auth/logout', {});
+                      setMe((m) => ({ ...m, user: null }));
+                      navigate('/');
+                      setToast('You’re signed out.');
+                    } catch (e) {
+                      setToast((e as Error).message);
+                    }
+                  } else if (me.twitchConfigured) location.assign('/auth/twitch?returnTo=/');
+                  else setHelp(true);
+                }}
+              >
+                {me.user ? <LogOut size={16} /> : <MoreHorizontal size={18} />}
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+      <div className="main-shell">
+        {!isOverlay && match?.[1] !== 'play' && (
+          <header className="topbar">
+            <div className="breadcrumb">
+              Workspace <ChevronRight size={14} />
+              <strong>
+                {match
+                  ? 'Live room'
+                  : tab === 'overview'
+                    ? 'Overview'
+                    : tab === 'questions'
+                      ? 'Question bank'
+                      : 'Hall of lies'}
+              </strong>
+            </div>
+            <div className="topbar-right">
+              <span className="status-pill">
+                <span />
+                {me.aiConfigured ? 'OpenAI connected' : 'Preview workspace'}
+              </span>
+              {me.user ? (
+                <span className="channel-chip">
+                  <Twitch size={15} />
+                  {me.user.displayName}
+                </span>
+              ) : (
+                <button
+                  className="connect-button"
+                  onClick={() =>
+                    me.twitchConfigured
+                      ? location.assign('/auth/twitch?returnTo=/')
+                      : setToast(
+                          'Twitch connection needs your app credentials. You can try a demo game now.',
+                        )
+                  }
+                >
+                  <Twitch size={16} />
+                  Connect Twitch <ArrowRight size={14} />
+                </button>
+              )}
+            </div>
+          </header>
+        )}
+        {match ? (
+          <GameRoom
+            key={match[2] + match[1]}
+            id={match[2]}
+            kind={match[1]}
+            me={me}
+            ensureDemo={ensureDemo}
+            notify={setToast}
+            navigate={navigate}
+          />
+        ) : (
+          <main className="dashboard">
+            {tab === 'overview' ? (
+              <>
+                <section className="page-heading">
+                  <div>
+                    <div className="eyebrow">A LITTLE MISCHIEF. A GREAT STREAM.</div>
+                    <h1>
+                      Your next great stream starts here<span>.</span>
+                    </h1>
+                    <p>Turn your chat into co-conspirators. Let the guessing games begin.</p>
+                  </div>
+                  <button className="button button-dark" onClick={() => openCreate()}>
+                    <Plus size={17} />
+                    Create a game
+                  </button>
+                </section>
+                <section className="hero">
+                  <div className="hero-copy">
+                    <span className="hero-badge">
+                      <span />
+                      CHAT VS. STREAMER
+                    </span>
+                    <h2>
+                      Your chat lies.
+                      <br />
+                      <span>You decide.</span>
+                    </h2>
+                    <p>
+                      One true answer. A chat full of liars.
+                      <br />
+                      Think you know who to trust?
+                    </p>
+                    <div className="hero-actions">
+                      <button className="button button-lime" onClick={() => openCreate()}>
+                        Let’s play <ArrowRight size={18} />
+                      </button>
+                      <button className="text-button" onClick={() => setHelp(true)}>
+                        <Play size={14} fill="currentColor" />
+                        How it works
+                      </button>
+                    </div>
+                    <div className="hero-footnote">
+                      <ShieldCheck size={14} />
+                      Private answers. Public chaos. Everyone’s in.
+                    </div>
+                  </div>
+                  <div className="hero-art">
+                    <img
+                      src="/assets/chatdidit-hero.png"
+                      alt="Playful sculptural chat characters in a dramatic game-show scene"
+                    />
+                    <div className="art-glow" />
+                  </div>
+                  <div className="hero-sticker">
+                    <span>TRUST</span>
+                    <strong>NOBODY.</strong>
+                    <Sparkles size={16} />
+                  </div>
+                </section>
+                <section className="mode-section">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Pick your flavor of deception</h3>
+                      <p>Same scheming chat. A different kind of challenge.</p>
+                    </div>
+                    <span className="subtle-tag">3 WAYS TO PLAY</span>
+                  </div>
+                  <div className="mode-grid">
+                    {modes.map(({ id, label, eyebrow, description, art, tone, icon: Icon }) => (
+                      <button
+                        className={`mode-card ${tone}`}
+                        key={id}
+                        onClick={() => openCreate(id)}
+                      >
+                        <div className="mode-art">
+                          <img src={art} alt="" />
+                          <span className="mode-icon">
+                            <Icon size={20} />
+                          </span>
+                          {id === 'fact' && <span className="popular-tag">START HERE</span>}
+                        </div>
+                        <div className="mode-copy">
+                          <span className="card-eyebrow">{eyebrow}</span>
+                          <h4>
+                            {label}
+                            <ArrowRight size={19} />
+                          </h4>
+                          <p>{description}</p>
+                          <span className="mode-footer">
+                            <Users size={13} />
+                            Chat vs. streamer<span>~90 sec / round</span>
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+                <section className="bottom-grid">
+                  <div className="how-card">
+                    <div className="section-heading">
+                      <div>
+                        <h3>Small setup. Big reactions.</h3>
+                        <p>From quiet chat to collective conspiracy in three steps.</p>
+                      </div>
+                      <Zap size={21} />
+                    </div>
+                    <div className="steps">
+                      {[
+                        {
+                          n: '01',
+                          title: 'Set the stage',
+                          text: 'Choose a mode and share your room.',
+                        },
+                        {
+                          n: '02',
+                          title: 'Let chat cook',
+                          text: 'Viewers secretly submit their best lies.',
+                        },
+                        {
+                          n: '03',
+                          title: 'Trust your gut',
+                          text: 'Pick the truth. Brace for the reveal.',
+                        },
+                      ].map((x) => (
+                        <div className="step" key={x.n}>
+                          <span>{x.n}</span>
+                          <strong>{x.title}</strong>
+                          <p>{x.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="obs-card">
+                    <span className="obs-icon">
+                      <Layers3 size={23} />
+                    </span>
+                    <h3>Made for the big reveal.</h3>
+                    <p>A clean OBS browser source puts the whole show on your stream.</p>
+                    <button className="text-link" onClick={() => openCreate()}>
+                      Set up your first game <ArrowRight size={16} />
+                    </button>
+                  </div>
+                </section>
+                <footer className="dashboard-footer">
+                  <span>
+                    <span className="small-logo">✳</span> Less lurking. More lying.
+                  </span>
+                  <span>MADE FOR COMMUNITIES. BUILT WITH CODEX.</span>
+                </footer>
+              </>
+            ) : tab === 'questions' ? (
+              <QuestionBank />
+            ) : (
+              <HallOfLies openCreate={() => openCreate()} />
+            )}
+          </main>
+        )}
+      </div>
+      {modal && (
+        <div className="modal-backdrop" onClick={() => !working && setModal(false)}>
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close icon-button"
+              aria-label="Close"
+              onClick={() => setModal(false)}
+            >
+              <X size={20} />
+            </button>
+            <span className="eyebrow">YOUR SHOW. YOUR RULES.</span>
+            <h2 id="modal-title">
+              Set the stage<span>.</span>
+            </h2>
+            <p className="modal-intro">A few choices, then let your chat do their worst.</p>
+            <label className="field-label">Game mode</label>
+            <div className="mode-select">
+              {modes.map((m) => (
+                <button
+                  key={m.id}
+                  className={config.mode === m.id ? 'selected' : ''}
+                  onClick={() => setConfig((c) => ({ ...c, mode: m.id }))}
+                >
+                  <m.icon size={19} />
+                  <span>{m.label}</span>
+                  {config.mode === m.id && <CheckCircle2 size={16} />}
+                </button>
+              ))}
+            </div>
+            <label className="field-label">Number of rounds</label>
+            <div className="segmented">
+              {[3, 5, 10].map((n) => (
+                <button
+                  key={n}
+                  className={config.rounds === n ? 'selected' : ''}
+                  onClick={() => setConfig((c) => ({ ...c, rounds: n }))}
+                >
+                  {n} rounds{n === 5 && <span>CLASSIC</span>}
+                </button>
+              ))}
+            </div>
+            <div className="two-fields">
+              <label>
+                Submission timer
+                <select
+                  value={config.submissionSeconds}
+                  onChange={(e) => setConfig((c) => ({ ...c, submissionSeconds: +e.target.value }))}
+                >
+                  {[15, 30, 45, 60].map((n) => (
+                    <option key={n} value={n}>
+                      {n} seconds
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Deception timer
+                <select
+                  value={config.deceptionSeconds}
+                  onChange={(e) => setConfig((c) => ({ ...c, deceptionSeconds: +e.target.value }))}
+                >
+                  {[15, 25, 30, 45, 60].map((n) => (
+                    <option key={n} value={n}>
+                      {n} seconds
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="info-note">
+              <ShieldCheck size={18} />
+              <p>
+                {me.user
+                  ? 'Your room is private until you share the viewer link.'
+                  : me.demoEnabled
+                    ? 'No Twitch account connected? Start a demo now. Connect Twitch for your live community.'
+                    : 'Connect your Twitch account to create and host a game.'}
+              </p>
+            </div>
+            <button
+              className="button button-dark full-width"
+              onClick={create}
+              disabled={working || !meLoaded}
+            >
+              {working ? <LoaderCircle size={18} className="spin" /> : <Radio size={18} />}{' '}
+              {working
+                ? 'Creating your room…'
+                : me.user
+                  ? 'Create game room'
+                  : me.demoEnabled
+                    ? 'Create demo room'
+                    : 'Continue with Twitch'}
+              <ArrowRight size={17} />
+            </button>
+          </section>
+        </div>
+      )}
+      {help && (
+        <div className="modal-backdrop" onClick={() => setHelp(false)}>
+          <section
+            className="modal help-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="help-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close icon-button"
+              aria-label="Close"
+              onClick={() => setHelp(false)}
+            >
+              <X size={20} />
+            </button>
+            <span className="eyebrow">WELCOME TO THE CONSPIRACY</span>
+            <h2 id="help-title">The truth is outnumbered.</h2>
+            <p>
+              Every round, your viewers secretly write believable fake answers to a surprising
+              question. We mix four lies with one verified truth.
+            </p>
+            <ol>
+              <li>
+                <strong>Start your show.</strong> Create a room, share its viewer link, and add the
+                OBS display to your stream.
+              </li>
+              <li>
+                <strong>Chat writes the lies.</strong> Each player submits privately, so your poker
+                face gets a fair chance.
+              </li>
+              <li>
+                <strong>You make the call.</strong> Debate with chat, lock in an answer, then see
+                who fooled whom.
+              </li>
+            </ol>
+            <div className="info-note">
+              <Trophy size={20} />
+              <p>
+                Choose the truth: streamer gets a point. Fall for a lie: chat scores. Simple,
+                devious, repeatable.
+              </p>
+            </div>
+            <button
+              className="button button-dark full-width"
+              onClick={() => {
+                setHelp(false);
+                openCreate();
+              }}
+            >
+              I’m in. Create a game <ArrowRight size={17} />
+            </button>
+          </section>
+        </div>
+      )}
+      {toast && (
+        <div className="toast" role="status">
+          <CircleHelp size={18} />
+          <span>{toast}</span>
+          <button className="icon-button" aria-label="Dismiss" onClick={() => setToast('')}>
+            <X size={17} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+function QuestionBank() {
+  const [catalog, setCatalog] = useState<{
+    modes: { id: string; name: string; count: number }[];
+    totalQuestions: number;
+  } | null>(null);
+  useEffect(() => {
+    api<{ modes: { id: string; name: string; count: number }[]; totalQuestions: number }>(
+      '/api/catalog',
+    )
+      .then(setCatalog)
+      .catch(() => {});
+  }, []);
+  return (
+    <>
+      <section className="page-heading">
+        <div>
+          <div className="eyebrow">GOOD QUESTIONS. BETTER LIES.</div>
+          <h1>
+            The question bank<span>.</span>
+          </h1>
+          <p>Source-backed curiosities built to make you second-guess everything.</p>
+        </div>
+        <span className="status-pill">
+          <ShieldCheck size={14} />
+          Source-backed questions
+        </span>
+      </section>
+      <div className="bank-notice">
+        <Eye size={21} />
+        <div>
+          <strong>Some things are better left a mystery.</strong>
+          <p>
+            The server keeps every question’s correct answer hidden until the reveal and tracks
+            previously used facts for each channel. Browse the modes here without spoiling your next
+            round.
+          </p>
+        </div>
+      </div>
+      <div className="question-list">
+        {modes
+          .filter((m) => m.id !== 'mixed')
+          .map((m, i) => (
+            <article className="question-row" key={m.id}>
+              <span className="question-number">0{i + 1}</span>
+              <div>
+                <span className="card-eyebrow">{m.eyebrow}</span>
+                <h3>{m.label}</h3>
+                <p className="catalog-description">{m.description}</p>
+                <span className="catalog-count">
+                  {catalog
+                    ? `${catalog.modes.find((x) => x.id === m.id)?.count ?? 0} source-backed questions`
+                    : 'Loading question catalog…'}{' '}
+                  · Answers stay sealed
+                </span>
+              </div>
+              <ShieldCheck size={20} />
+            </article>
+          ))}
+      </div>
+      <div className="bank-notice catalog-footnote">
+        <ShieldCheck size={21} />
+        <div>
+          <strong>Fresh facts. Fair play.</strong>
+          <p>
+            Each question has a canonical fact identifier and a supporting source. Channel history
+            prevents known facts from repeating. If the bank runs out, the game asks for fresh
+            verified content instead of silently repeating.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+function HallOfLies({ openCreate }: { openCreate: () => void }) {
+  return (
+    <>
+      <section className="page-heading">
+        <div>
+          <div className="eyebrow">GIVE CREDIT TO THE CON ARTISTS</div>
+          <h1>
+            The hall of lies<span>.</span>
+          </h1>
+          <p>Great deception deserves a little recognition.</p>
+        </div>
+      </section>
+      <section className="empty-state">
+        <span className="empty-icon">
+          <Trophy size={37} />
+        </span>
+        <h2>Every legend starts with a lie.</h2>
+        <p>
+          Winning contributors are recognized in each round’s reveal.
+          <br />
+          Play your first game to give your community its moment.
+        </p>
+        <button className="button button-dark" onClick={openCreate}>
+          Start a game <ArrowRight size={17} />
+        </button>
+      </section>
+    </>
+  );
+}
+function GameRoom({
+  id,
+  kind,
+  me,
+  ensureDemo,
+  notify,
+  navigate,
+}: {
+  id: string;
+  kind: string;
+  me: Me;
+  ensureDemo: () => Promise<User>;
+  notify: (s: string) => void;
+  navigate: (s: string) => void;
+}) {
+  const [game, setGame] = useState<Game | null>(null);
+  const [error, setError] = useState('');
+  const [now, setNow] = useState(Date.now());
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [selected, setSelected] = useState('');
+  const [connected, setConnected] = useState(false);
+  const isOverlay = kind === 'overlay',
+    isViewer = kind === 'play';
+  const sourceRef = useRef<EventSource | null>(null);
+  const submissionHydrated = useRef('');
+  useEffect(() => {
+    let stopped = false;
+    const pull = () =>
+      api<Game | { state: Game }>('/api/games/' + id)
+        .then((data) => {
+          if (!stopped) {
+            setGame('state' in data ? data.state : data);
+            setError('');
+          }
+        })
+        .catch((e) => {
+          if (!stopped) setError(e.message);
+        });
+    pull();
+    const source = new EventSource('/api/games/' + id + '/events', { withCredentials: true });
+    sourceRef.current = source;
+    source.onopen = () => setConnected(true);
+    source.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        setGame(data.state || data);
+        setError('');
+        setConnected(true);
+      } catch {}
+    };
+    source.onerror = () => setConnected(false);
+    const poll = setInterval(() => {
+      if (source.readyState !== EventSource.OPEN) pull();
+    }, 5000);
+    const tick = setInterval(() => setNow(Date.now()), 250);
+    return () => {
+      stopped = true;
+      source.close();
+      clearInterval(poll);
+      clearInterval(tick);
+    };
+  }, [id]);
+  useEffect(() => {
+    setAnswer('');
+    setSubmitted(false);
+    setSelected('');
+    submissionHydrated.current = '';
+  }, [game?.round]);
+  useEffect(() => {
+    const key = id + ':' + game?.round;
+    if (game?.ownSubmission && submissionHydrated.current !== key) {
+      setAnswer(game.ownSubmission.text);
+      setSubmitted(true);
+      submissionHydrated.current = key;
+    }
+  }, [game?.ownSubmission?.text, game?.round, id]);
+  async function action(action: string, optionId?: string) {
+    setBusy(true);
+    try {
+      const data = await api<Game | { state: Game }>('/api/games/' + id + '/actions', {
+        action,
+        optionId,
+      });
+      setGame('state' in data ? data.state : data);
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      if (!me.user && me.demoEnabled) await ensureDemo();
+      await api('/api/games/' + id + '/submissions', { text: answer });
+      setSubmitted(true);
+      notify('Your lie is in. Keep a straight face.');
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function copy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify('Link copied. Let the conspiracy begin.');
+    } catch {
+      notify('Copy this link: ' + url);
+    }
+  }
+  const seconds = game
+    ? Math.max(
+        0,
+        Math.ceil(
+          (game.paused ? game.remainingMs || 0 : game.deadline ? game.deadline - now : 0) / 1000,
+        ),
+      )
+    : 0;
+  if (!game)
+    return (
+      <main className="room-loading">
+        <Brand />
+        <div>
+          {error ? (
+            <>
+              <CircleHelp size={30} />
+              <h2>We couldn’t open this room.</h2>
+              <p>{error}</p>
+              <button className="button button-dark" onClick={() => navigate('/')}>
+                Back to dashboard
+              </button>
+            </>
+          ) : (
+            <>
+              <LoaderCircle className="spin" size={30} />
+              <p>Getting the show ready…</p>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  const showOptions = game.options?.length > 0;
+  const phase = game.phase;
+  const reveal = game.reveal;
+  const canHost = !isViewer && !isOverlay && game.canControl !== false;
+  const modeName = modes.find((m) => m.id === game.mode)?.label || game.mode;
+  const roomUrl = location.origin + '/play/' + id;
+  const obsUrl = location.origin + '/overlay/' + id;
+  return (
+    <main
+      className={`room-page ${isViewer ? 'viewer-page' : ''} ${isOverlay ? 'broadcast-page' : ''}`}
+    >
+      {isViewer && (
+        <header className="viewer-header">
+          <Brand />
+          <span className="status-pill">
+            <span />
+            {connected ? 'LIVE ROOM' : 'RECONNECTING'}
+          </span>
+        </header>
+      )}
+      {!isOverlay && !isViewer && (
+        <div className="room-heading">
+          <div>
+            <button className="back-link" onClick={() => navigate('/')}>
+              <ArrowLeft size={14} />
+              Overview
+            </button>
+            <h1>
+              Your live room<span>.</span>
+            </h1>
+            <p>
+              {modeName} <span>·</span> {game.totalRounds} rounds <span>·</span>{' '}
+              {game.aiMode === 'demo' ||
+              game.aiMode === 'fallback' ||
+              (me.demoEnabled && !me.aiConfigured)
+                ? 'Demo · sample selection'
+                : 'AI-assisted selection'}
+            </p>
+          </div>
+          <div className="room-share">
+            <button className="button button-outline" onClick={() => copy(roomUrl)}>
+              <Link2 size={16} />
+              Invite viewers
+            </button>
+            <button className="button button-dark" onClick={() => copy(obsUrl)}>
+              <Copy size={16} />
+              Copy OBS link
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="room-columns">
+        <section className="game-stage">
+          <div className="stage-top">
+            <span className="stage-wordmark">
+              CHATDIDIT<span>✳</span>
+            </span>
+            <div className="stage-round-wrap">
+              {['demo', 'fallback'].includes(game.aiMode || '') && (
+                <span className="demo-stage-label">DEMO · SAMPLE GAME</span>
+              )}
+              <div className="stage-round">
+                {phase === 'lobby'
+                  ? 'THE SHOW STARTS HERE'
+                  : `ROUND ${String(game.round).padStart(2, '0')} / ${String(game.totalRounds).padStart(2, '0')}`}
+              </div>
+            </div>
+            <span className="live-label">
+              <span />
+              {game.paused ? 'PAUSED' : 'LIVE'}
+            </span>
+          </div>
+          <div className="stage-body">
+            <div className="round-eyebrow">
+              {phase === 'reveal'
+                ? !game.selectedOptionId
+                  ? 'TIME’S UP.'
+                  : reveal?.fooled
+                    ? 'CHAT DID IT!'
+                    : 'NICE TRY, CHAT.'
+                : phase === 'finished'
+                  ? 'THE FINAL SCORE'
+                  : phase === 'lobby'
+                    ? 'YOUR COMMUNITY. YOUR GAME SHOW.'
+                    : modeName?.toUpperCase()}
+            </div>
+            {phase === 'lobby' ? (
+              <div className="lobby-content">
+                <div className="lobby-icon">
+                  <MessageCircle size={50} />
+                  <Sparkles size={24} />
+                </div>
+                <h2>
+                  Your chat lies.
+                  <br />
+                  <em>You decide.</em>
+                </h2>
+                <p>
+                  {isViewer
+                    ? 'You’re in. Get your best lies ready.'
+                    : 'The room is ready. Share the link, then start the show.'}
+                </p>
+                {canHost && (
+                  <button
+                    className="button button-lime"
+                    disabled={busy}
+                    onClick={() => action('start')}
+                  >
+                    <Play size={17} fill="currentColor" />
+                    Start the show
+                  </button>
+                )}
+              </div>
+            ) : phase === 'finished' ? (
+              <div className="finished-content">
+                <Trophy size={48} />
+                <h2>
+                  {game.scores.chat === game.scores.streamer
+                    ? 'A worthy conspiracy.'
+                    : game.scores.chat > game.scores.streamer
+                      ? 'Chat did it.'
+                      : 'Truth wins this time.'}
+                </h2>
+                <p>
+                  {game.scores.chat > game.scores.streamer
+                    ? 'Never underestimate a chat with a plan.'
+                    : 'The lies were good. The instincts were better.'}
+                </p>
+                <div className="final-score">
+                  <div>
+                    <span>TEAM CHAT</span>
+                    <strong>{game.scores.chat}</strong>
+                  </div>
+                  <span>:</span>
+                  <div>
+                    <span>STREAMER</span>
+                    <strong>{game.scores.streamer}</strong>
+                  </div>
+                </div>
+                {!isOverlay && (
+                  <button className="button button-lime" onClick={() => navigate('/')}>
+                    Back to the control room <ArrowRight size={17} />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                <h2 className="stage-question">
+                  {game.question?.prompt || 'The next question is on its way.'}
+                </h2>
+                {phase === 'submission' && (
+                  <div className="submission-stage">
+                    <div className="submission-orb">
+                      <MessageCircle size={44} />
+                      <span>?</span>
+                    </div>
+                    <h3>{isViewer ? 'Make it believable.' : 'Chat is cooking up a story.'}</h3>
+                    <p>
+                      {isViewer
+                        ? 'Submit a convincing fake answer below.'
+                        : 'The answers are private. The conspiracy is very real.'}
+                    </p>
+                    <div className="participant-count">
+                      <Users size={18} />
+                      <strong>{game.submissionCount.toLocaleString()}</strong>
+                      <span>lies submitted</span>
+                    </div>
+                  </div>
+                )}
+                {phase === 'selection' && (
+                  <div className="selection-state">
+                    <LoaderCircle size={38} className="spin" />
+                    <h3>
+                      Separating the good lies
+                      <br />
+                      from the great ones.
+                    </h3>
+                    <p>Grouping similar answers and choosing the finalists.</p>
+                  </div>
+                )}
+                {phase === 'question' && (
+                  <div className="get-ready">
+                    <Sparkles size={28} />
+                    <p>Take a moment. The lies are coming.</p>
+                  </div>
+                )}
+                {showOptions && ['deception', 'locked', 'reveal'].includes(phase) && (
+                  <div className="answer-options">
+                    {game.options.map((o, i) => (
+                      <button
+                        key={o.id}
+                        disabled={!canHost || phase !== 'deception' || busy}
+                        onClick={() => setSelected(o.id)}
+                        className={`answer-option ${selected === o.id || game.selectedOptionId === o.id ? 'chosen' : ''} ${reveal?.correctOptionId === o.id ? 'correct' : ''} ${phase === 'reveal' && game.selectedOptionId === o.id && reveal?.correctOptionId !== o.id ? 'wrong' : ''}`}
+                      >
+                        <span>{String.fromCharCode(65 + i)}</span>
+                        <strong>{o.text}</strong>
+                        {reveal?.correctOptionId === o.id ? (
+                          <CheckCircle2 size={21} />
+                        ) : game.selectedOptionId === o.id ? (
+                          <Flag size={18} />
+                        ) : selected === o.id ? (
+                          <CheckCircle2 size={20} />
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {phase === 'locked' && (
+                  <div className="locked-label">
+                    <ShieldCheck size={17} />
+                    Locked in. No take-backs.
+                  </div>
+                )}
+                {phase === 'reveal' && reveal && (
+                  <div className={`reveal-note ${reveal.fooled ? 'fooled' : ''}`}>
+                    <div>
+                      <span>
+                        {!game.selectedOptionId || reveal.fooled ? 'CHAT +1' : 'STREAMER +1'}
+                      </span>
+                      <h3>
+                        {!game.selectedOptionId
+                          ? 'Time ran out. Chat takes the point.'
+                          : reveal.fooled
+                            ? 'You believed the lie.'
+                            : 'You found the truth.'}
+                      </h3>
+                    </div>
+                    <p>{reveal.explanation}</p>
+                    {reveal.contributors?.length > 0 && (
+                      <div className="contributor-credit">
+                        <Sparkles size={14} />
+                        <span>
+                          Lie credits:{' '}
+                          {reveal.contributors
+                            .slice(0, 4)
+                            .map((c) =>
+                              typeof c === 'string'
+                                ? c
+                                : (c as { displayName?: string }).displayName || 'Viewer',
+                            )
+                            .join(', ')}
+                          {reveal.contributors.length > 4
+                            ? ` +${reveal.contributors.length - 4} more`
+                            : ''}
+                        </span>
+                      </div>
+                    )}
+                    {!isOverlay && (
+                      <a href={reveal.sourceUrl} target="_blank" rel="noreferrer">
+                        Check the source <ExternalLink size={13} />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <div className="stage-bottom">
+            <div className="score-side">
+              <MessageCircle size={17} />
+              <span>CHAT</span>
+              <strong>{game.scores.chat}</strong>
+            </div>
+            <div className="stage-timer">
+              {!['lobby', 'finished'].includes(phase) && (
+                <>
+                  <span className={`timer-digits ${seconds <= 5 ? 'urgent' : ''}`}>
+                    {String(Math.floor(seconds / 60)).padStart(2, '0')}:
+                    {String(seconds % 60).padStart(2, '0')}
+                  </span>
+                  <span>{game.paused ? 'Paused' : phaseLabels[phase] || phase}</span>
+                </>
+              )}
+            </div>
+            <div className="score-side">
+              <strong>{game.scores.streamer}</strong>
+              <span>STREAMER</span>
+              <Twitch size={17} />
+            </div>
+          </div>
+        </section>
+        {!isOverlay && (
+          <aside className="room-panel">
+            {isViewer ? (
+              <>
+                <div className="panel-eyebrow">
+                  <MessageCircle size={17} />
+                  TEAM CHAT
+                </div>
+                <h3>
+                  {phase === 'submission'
+                    ? 'Lie like you mean it.'
+                    : phase === 'deception'
+                      ? 'Sell the story.'
+                      : phase === 'reveal'
+                        ? 'The truth comes out.'
+                        : 'Ready to cause trouble?'}
+                </h3>
+                {phase === 'submission' ? (
+                  <form onSubmit={submit}>
+                    <label className="field-label" htmlFor="lie-answer">
+                      Your fake answer
+                    </label>
+                    <textarea
+                      id="lie-answer"
+                      maxLength={140}
+                      placeholder="Something believable. Something wrong."
+                      value={answer}
+                      onChange={(e) => {
+                        setAnswer(e.target.value);
+                        setSubmitted(false);
+                      }}
+                      disabled={busy || game.paused}
+                    />
+                    <div className="input-meta">
+                      <span>Keep it clean. Make it convincing.</span>
+                      <span>{answer.length}/140</span>
+                    </div>
+                    {!me.user && !me.demoEnabled ? (
+                      <a
+                        className="button button-dark full-width"
+                        href={'/auth/twitch?returnTo=' + encodeURIComponent('/play/' + id)}
+                      >
+                        <Twitch size={17} />
+                        Sign in to submit
+                      </a>
+                    ) : (
+                      <button
+                        className="button button-dark full-width"
+                        disabled={!answer.trim() || busy || game.paused}
+                      >
+                        {busy ? (
+                          <LoaderCircle className="spin" size={17} />
+                        ) : submitted ? (
+                          <Check size={17} />
+                        ) : (
+                          <Send size={17} />
+                        )}{' '}
+                        {submitted ? 'Submitted — update your lie' : 'Send your lie'}
+                      </button>
+                    )}
+                    <p className="private-note">
+                      <ShieldCheck size={13} />
+                      Only the server can see your answer before selection.
+                    </p>
+                  </form>
+                ) : (
+                  <>
+                    <p className="panel-description">
+                      {phase === 'deception'
+                        ? 'Head to Twitch chat and convince the streamer. All five options are on the table.'
+                        : phase === 'reveal'
+                          ? 'That’s one round in the books. Stay close — there are more lies to tell.'
+                          : phase === 'finished'
+                            ? 'Thanks for bringing the chaos. Your community made the show.'
+                            : 'Stay on this page. When the submission timer starts, this is where you’ll write your answer.'}
+                    </p>
+                    <div className="viewer-wait">
+                      <Users size={34} />
+                      <span>You’re part of the conspiracy.</span>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="panel-eyebrow">
+                  <Settings2 size={17} />
+                  HOST CONTROLS
+                </div>
+                <h3>{phaseLabels[phase] || 'Your game'}</h3>
+                <p className="panel-description">
+                  {phase === 'deception'
+                    ? 'Listen to chat, trust your instincts, and lock in one answer.'
+                    : phase === 'lobby'
+                      ? 'Invite your community and add the display to OBS. Then you’re ready to go live.'
+                      : 'The server keeps the clock. You keep the show moving.'}
+                </p>
+                {game.canControl === false ? (
+                  <div className="info-note">
+                    <ShieldCheck size={17} />
+                    <p>This room belongs to another host. Join through the viewer link.</p>
+                  </div>
+                ) : (
+                  <div className="control-stack">
+                    {phase === 'lobby' ? (
+                      <button
+                        className="button button-dark full-width"
+                        onClick={() => action('start')}
+                        disabled={busy}
+                      >
+                        <Play size={17} />
+                        Start game
+                      </button>
+                    ) : phase === 'deception' ? (
+                      <button
+                        className="button button-dark full-width"
+                        onClick={() => action('lock', selected)}
+                        disabled={busy || !selected || game.paused}
+                      >
+                        <ShieldCheck size={17} />
+                        Lock in{' '}
+                        {selected
+                          ? String.fromCharCode(
+                              65 + game.options.findIndex((x) => x.id === selected),
+                            )
+                          : 'your answer'}
+                      </button>
+                    ) : null}
+                    {!['lobby', 'finished'].includes(phase) && (
+                      <>
+                        <button
+                          className="button button-outline full-width"
+                          onClick={() => action(game.paused ? 'resume' : 'pause')}
+                          disabled={busy}
+                        >
+                          {game.paused ? <Play size={16} /> : <Pause size={16} />}{' '}
+                          {game.paused ? 'Resume game' : 'Pause game'}
+                        </button>
+                        <button
+                          className="button button-quiet full-width"
+                          onClick={() => action('advance')}
+                          disabled={busy}
+                        >
+                          <SkipForward size={16} />
+                          Advance phase
+                        </button>
+                      </>
+                    )}
+                    {!['lobby', 'finished'].includes(phase) && (
+                      <button
+                        className="end-button"
+                        onClick={() => {
+                          if (confirm('End this match and show the final score?')) action('end');
+                        }}
+                        disabled={busy}
+                      >
+                        End match
+                      </button>
+                    )}
+                  </div>
+                )}
+                {me.demoEnabled && ['lobby', 'submission'].includes(phase) && (
+                  <div className="demo-audience">
+                    <span>DEMO TOOLS</span>
+                    <p>Try a full round with clearly labeled sample lies.</p>
+                    <button
+                      className="button button-outline full-width"
+                      disabled={busy || phase !== 'submission'}
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          await api('/api/games/' + id + '/demo-audience', {});
+                          notify('Demo audience submissions added.');
+                        } catch (e) {
+                          notify((e as Error).message);
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <Users size={15} />
+                      Add demo audience
+                    </button>
+                    {phase === 'lobby' && <small>Available during the submission phase.</small>}
+                  </div>
+                )}
+                {canHost && <ChatConnection me={me} id={id} notify={notify} />}
+                <div className="room-link-card">
+                  <span>VIEWER ROOM</span>
+                  <code>{id.slice(0, 20)}</code>
+                  <button className="text-link" onClick={() => copy(roomUrl)}>
+                    Copy invite link <Copy size={13} />
+                  </button>
+                  <a href={'/play/' + id} target="_blank" rel="noreferrer">
+                    Open viewer page <ExternalLink size={13} />
+                  </a>
+                </div>
+                <div className="obs-note">
+                  <Layers3 size={18} />
+                  <p>
+                    OBS browser source
+                    <br />
+                    <strong>1920 × 1080</strong>
+                    <button onClick={() => window.open('/overlay/' + id, '_blank')}>
+                      Preview display <ExternalLink size={12} />
+                    </button>
+                  </p>
+                </div>
+              </>
+            )}
+            <div className="connection-line">
+              <span className={connected ? 'connected' : ''} />
+              {connected ? 'Live connection' : 'Reconnecting automatically'}
+            </div>
+          </aside>
+        )}
+      </div>
+      {isViewer && (
+        <footer className="viewer-footer">
+          Your chat lies. You decide. <span>✳</span> ChatDidIt
+        </footer>
+      )}
+    </main>
+  );
+}
+function ChatConnection({
+  me,
+  id,
+  notify,
+}: {
+  me: Me;
+  id: string;
+  notify: (text: string) => void;
+}) {
+  const [chat, setChat] = useState<{
+    connected?: boolean;
+    needsAuthorization?: boolean;
+    status?: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const realUser = me.user && !me.user.demo && !me.user.isDemo && !me.user.id.startsWith('demo-');
+  useEffect(() => {
+    if (!me.twitchConfigured || !realUser) return;
+    api<{ connected?: boolean; needsAuthorization?: boolean; status?: string }>(
+      '/api/twitch/chat-status',
+    )
+      .then(setChat)
+      .catch(() => {});
+  }, [me.twitchConfigured, me.user?.id]);
+  async function connect() {
+    if (!me.twitchConfigured) return;
+    if (!realUser || chat?.needsAuthorization) {
+      location.href = '/auth/twitch?chat=true&returnTo=' + encodeURIComponent('/host/' + id);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api<{
+        connected?: boolean;
+        needsAuthorization?: boolean;
+        status?: string;
+      }>('/api/twitch/connect-chat', {});
+      setChat(result);
+      if (result.needsAuthorization) {
+        location.href = '/auth/twitch?chat=true&returnTo=' + encodeURIComponent('/host/' + id);
+        return;
+      }
+      notify(result.connected ? 'Twitch chat is connected.' : 'Twitch chat connection requested.');
+    } catch (e) {
+      const failure = e as Error & { code?: string; needsAuthorization?: boolean };
+      if (failure.code === 'CHAT_AUTH_REQUIRED' || failure.needsAuthorization) {
+        location.href = '/auth/twitch?chat=true&returnTo=' + encodeURIComponent('/host/' + id);
+        return;
+      }
+      notify(failure.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="chat-connection">
+      <span className="panel-eyebrow">
+        <Twitch size={15} />
+        TWITCH CHAT
+      </span>
+      <p>
+        {chat?.connected
+          ? 'Your channel’s chat events are connected.'
+          : realUser
+            ? 'Connect channel chat to bring the live conversation into your game.'
+            : 'Connect Twitch when you’re ready to play with your community.'}
+      </p>
+      <button
+        className="button button-outline full-width"
+        disabled={!me.twitchConfigured || busy || chat?.connected}
+        title={
+          !me.twitchConfigured
+            ? 'Add your Twitch app credentials to enable chat integration'
+            : chat?.connected
+              ? 'Twitch chat is connected'
+              : 'Connect Twitch chat'
+        }
+        onClick={connect}
+      >
+        {busy ? (
+          <LoaderCircle size={15} className="spin" />
+        ) : chat?.connected ? (
+          <CheckCircle2 size={15} />
+        ) : (
+          <Twitch size={15} />
+        )}{' '}
+        {chat?.connected ? 'Chat connected' : realUser ? 'Connect chat' : 'Connect Twitch'}
+      </button>
+      {!me.twitchConfigured && <small>Available after Twitch setup.</small>}
+    </div>
+  );
+}
+export default App;

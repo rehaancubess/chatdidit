@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>ChatDidIt — Make it believable.</title>
+    <link rel="stylesheet" href="./extension.css" />
+    <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+    <script src="./panel.js" defer></script>
+  </head>
+  <body>
+    <main class="panel">
+      <header class="brand">
+        <a class="wordmark" aria-label="ChatDidIt">chatdidit<span class="brand-dot">✳</span></a
+        ><span id="connection" class="connection">CONNECTING</span>
+      </header>
+      <div class="eyebrow"><span class="live-dot"></span> YOUR CHAT LIES. YOU DECIDE.</div>
+      <section class="scoreboard" aria-label="Match score">
+        <div><span>TEAM CHAT</span><strong id="chat-score">0</strong></div>
+        <span class="versus">VS</span>
+        <div><span>STREAMER</span><strong id="streamer-score">0</strong></div>
+      </section>
+      <section class="question-card">
+        <div class="round-line">
+          <span id="round-label">WAITING FOR A MATCH</span
+          ><span id="timer" aria-label="Seconds remaining">—</span>
+        </div>
+        <h1 id="question">A little lie.<br />A big reaction.</h1>
+        <p id="phase-caption">
+          Your streamer will start the next round. When the question drops, make up an answer worth
+          believing.
+        </p>
+        <div class="timer-track"><div id="timer-progress"></div></div>
+      </section>
+      <form id="submission-form" hidden>
+        <label for="answer">SELL US YOUR BEST LIE</label>
+        <div class="input-wrap">
+          <textarea
+            id="answer"
+            maxlength="120"
+            rows="3"
+            placeholder="Make it convincing…"
+            required
+            autocomplete="off"
+            spellcheck="true"
+          ></textarea
+          ><span id="character-count">0 / 120</span>
+        </div>
+        <button id="submit-button" type="submit">
+          Submit your lie <span aria-hidden="true">↗</span>
+        </button>
+        <p class="hint">
+          Private until the reveal. One lie per round. You can edit it while the timer runs.
+        </p>
+      </form>
+      <section id="options" class="options" aria-label="Round answers" hidden></section>
+      <section id="reveal" class="reveal" aria-live="polite" hidden></section>
+      <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+      <footer class="panel-footer">
+        <span id="player-count">THE TRUTH IS OUTNUMBERED.</span><span>✳</span>
+      </footer>
+    </main>
+  </body>
+</html>

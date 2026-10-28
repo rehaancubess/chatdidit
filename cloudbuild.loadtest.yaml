@@ -1,0 +1,14 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - Dockerfile.loadtest
+      - --tag
+      - us-central1-docker.pkg.dev/chatdidit-rehaancubes/chatdidit/loadtest:latest
+      - .
+
+images:
+  - us-central1-docker.pkg.dev/chatdidit-rehaancubes/chatdidit/loadtest:latest
+
+timeout: 1200s

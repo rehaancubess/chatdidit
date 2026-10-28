@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Configure ChatDidIt</title>
+    <link rel="stylesheet" href="./extension.css" />
+    <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+    <script src="./config.js" defer></script>
+  </head>
+  <body>
+    <main class="panel config-panel">
+      <header class="brand">
+        <span class="wordmark">chatdidit<span class="brand-dot">✳</span></span
+        ><span class="badge">SETUP</span>
+      </header>
+      <div class="eyebrow">YOUR NEXT GREAT STREAM SEGMENT.</div>
+      <h1>Let chat<br />take the stage.</h1>
+      <p class="config-copy">
+        Connect this panel to your ChatDidIt backend. Start matches and control the show from your
+        streamer dashboard.
+      </p>
+      <form id="configuration-form">
+        <label for="backend-url">BACKEND URL</label
+        ><input
+          type="url"
+          id="backend-url"
+          placeholder="https://chatdidit-….run.app"
+          required
+        /><button type="submit" id="save-button" disabled>
+          Save configuration <span>↗</span>
+        </button>
+      </form>
+      <p id="feedback" class="feedback" role="status" aria-live="polite">
+        Waiting for Twitch authorization…
+      </p>
+      <a id="dashboard-link" class="secondary-link" target="_blank" rel="noopener noreferrer" hidden
+        >Open streamer dashboard ↗</a
+      >
+      <p class="hint">
+        Local testing: serve the backend over HTTPS and add its origin to the Extension's URL
+        Fetching allowlist in the Twitch Developer Console.
+      </p>
+    </main>
+  </body>
+</html>

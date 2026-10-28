@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatDidIt — Live controls</title>
+    <link rel="stylesheet" href="./extension.css" />
+    <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+    <script src="./config.js" defer></script>
+  </head>
+  <body>
+    <main class="panel config-panel">
+      <header class="brand">
+        <span class="wordmark">chatdidit<span class="brand-dot">✳</span></span
+        ><span class="badge">LIVE CONFIG</span>
+      </header>
+      <div class="eyebrow">READY WHEN YOU ARE.</div>
+      <h1>Your chat.<br />Your show.</h1>
+      <p class="config-copy">
+        Open the dashboard to start a match, control rounds and lock in your answer. Keep this panel
+        connected to the same backend.
+      </p>
+      <a id="dashboard-link" class="secondary-link" target="_blank" rel="noopener noreferrer" hidden
+        >Open streamer dashboard ↗</a
+      >
+      <form id="configuration-form">
+        <label for="backend-url">BACKEND URL</label
+        ><input
+          type="url"
+          id="backend-url"
+          placeholder="https://chatdidit-….run.app"
+          required
+        /><button type="submit" id="save-button" disabled>
+          Save configuration <span>↗</span>
+        </button>
+      </form>
+      <p id="feedback" class="feedback" role="status" aria-live="polite">
+        Waiting for Twitch authorization…
+      </p>
+      <p class="hint">
+        The dashboard uses your Twitch login. Extension tokens stay in the panel and are refreshed
+        automatically by Twitch.
+      </p>
+    </main>
+  </body>
+</html>

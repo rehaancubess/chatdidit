@@ -1,0 +1,6 @@
+FROM us-central1-docker.pkg.dev/chatdidit-rehaancubes/chatdidit/app:demo-v2
+
+WORKDIR /app
+COPY scripts/loadtest.ts ./scripts/loadtest.ts
+
+CMD ["node", "--import", "tsx", "scripts/loadtest.ts"]
