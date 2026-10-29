@@ -21,6 +21,12 @@ Open http://localhost:5173. Create a demo room, start the show, and use **Add de
 
 The generated local `.env` in this working copy already contains a random signing secret. It is ignored by Git and excluded from cloud builds. Never commit credentials.
 
+## Game controls and presentation
+
+The game hub uses mode cartridges and an invite/start lobby. Live rounds show a score HUD, a server-timestamp countdown ring and a five-stage progress rail. During the host's choice phase, press **1–5** to select an answer and **Enter** to lock it. Keyboard shortcuts are disabled while typing, in dialogs, or when interacting with unrelated buttons and links.
+
+Reveal sounds are optional and off by default; use **Sound off/on** to enable the synthesized cues. The UI respects reduced-motion preferences. On narrow viewer screens, the question and private submission form appear first, with a sent confirmation and an explicit edit action.
+
 ## Interfaces
 
 | Route | Purpose |
