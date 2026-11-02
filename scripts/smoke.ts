@@ -38,6 +38,8 @@ try {
   await call(`/api/games/${id}/demo-audience`, {}, host);
   let state = (await call(`/api/games/${id}`, undefined, viewer)).value;
   assert.equal(state.ownSubmission.text, 'A royal party trick');
+  assert.ok(state.question?.prompt);
+  assert.equal((await call(`/api/games/${id}`, undefined, host)).value.question, null);
   assert.equal(state.reveal, undefined);
   assert.deepEqual(state.options, []);
   const publicState = (await call(`/api/games/${id}`)).value;
@@ -53,6 +55,8 @@ try {
     await new Promise((r) => setTimeout(r, 500));
   }
   assert.equal(state.phase, 'deception');
+  if (process.env.SMOKE_REQUIRE_OPENAI === 'true') assert.equal(state.aiMode, 'openai');
+  console.log(`Selection mode: ${state.aiMode}`);
   assert.equal(state.options.length, 5);
   assert.equal(state.reveal, undefined);
   assert.ok(state.options.every((o: any) => Object.keys(o).sort().join(',') === 'id,text'));

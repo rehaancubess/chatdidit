@@ -7,6 +7,7 @@
     submit = $('submit-button');
   const feedback = $('feedback'),
     connection = $('connection');
+  let broadcaster = false;
   let auth,
     backendUrl = '',
     state,
@@ -109,7 +110,8 @@
     $('round-label').textContent = state.round
       ? `ROUND ${String(state.round).padStart(2, '0')} / ${String(state.totalRounds).padStart(2, '0')}`
       : 'WAITING FOR A MATCH';
-    $('question').textContent = state.question?.prompt || 'Ready to bend the truth?';
+    const hiddenFromHost = broadcaster && ['question', 'submission', 'selection'].includes(state.phase);
+    $('question').textContent = hiddenFromHost ? 'Chat knows something you don’t.' : state.question?.prompt || 'Ready to bend the truth?';
     $('chat-score').textContent = String(state.scores?.chat ?? 0);
     $('streamer-score').textContent = String(state.scores?.streamer ?? 0);
     $('player-count').textContent = state.submissionCount
@@ -127,10 +129,10 @@
     };
     $('phase-caption').textContent = state.paused
       ? 'The streamer paused the round. Your lie is safe.'
-      : captions[state.phase] || 'Waiting for the next round.';
+      : hiddenFromHost ? 'Your viewers get the first look. You’ll see the question when the choices appear.' : captions[state.phase] || 'Waiting for the next round.';
     const open = state.phase === 'submission' && !state.paused;
-    form.hidden = state.phase !== 'submission';
-    answer.disabled = !open || !loggedIn() || submitting;
+    form.hidden = broadcaster || state.phase !== 'submission';
+    answer.disabled = broadcaster || !open || !loggedIn() || submitting;
     submit.disabled = answer.disabled;
     if (state.ownSubmission?.text && lastOwn !== state.ownSubmission.text) {
       if (document.activeElement !== answer) answer.value = state.ownSubmission.text;
@@ -165,7 +167,7 @@
     reveal.hidden = !state.reveal;
     if (state.reveal) {
       const title = document.createElement('strong');
-      title.textContent = state.reveal.fooled ? 'CHAT DID IT. ✳' : 'THE STREAMER SAW THROUGH IT.';
+      title.textContent = state.reveal.fooled || !state.selectedOptionId ? 'CHAT DID IT!! ✳' : 'THE STREAMER SAW THROUGH IT.';
       const truth = document.createElement('p');
       truth.textContent = `The truth: ${state.reveal.answer}`;
       const explanation = document.createElement('p');
@@ -381,6 +383,7 @@
   });
   ext.onAuthorized((nextAuth) => {
     auth = nextAuth;
+    try { broadcaster = JSON.parse(atob(nextAuth.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role === 'broadcaster'; } catch { broadcaster = false; }
     backendUrl = getBackend();
     restart();
   });

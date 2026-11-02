@@ -1,6 +1,6 @@
 # Twitch setup
 
-ChatDidIt has two Twitch integrations: OAuth for the standalone dashboard/viewer pages, and a native panel Extension for private in-channel submissions. The Extension's assets are ready for **Local Test**. A registered Twitch application, registered Extension and real credentials are still required; no Twitch registration or review is simulated by this repository.
+ChatDidIt has two Twitch integrations: OAuth for the standalone dashboard/viewer pages, and a native panel Extension for private in-channel submissions. The Extension's assets are ready for **Local Test**. The production OAuth application and Extension are registered. See the deployment status below; local development still requires its own configured credentials.
 
 ## 1. Register the OAuth application
 
@@ -16,20 +16,21 @@ Login alone needs no email permission. Request chat permissions only for the acc
 
 ## 2. Register and run the panel Extension in Local Test
 
-1. In [Extensions](https://dev.twitch.tv/console/extensions), create **ChatDidIt** with the **Panel** type. Configure a panel height around 650 pixels, adjusting to your test channel.
+1. In [Extensions](https://dev.twitch.tv/console/extensions), create **ChatDidIt** with the **Panel** type. Configure a panel height of 500 pixels (Twitch supports 100–500).
 2. Use the backend's `/extension/` asset directory as the Base URI. The deployed base URI is `https://YOUR-SERVICE.run.app/extension/`. It must end in `/`.
 3. Set these paths relative to the Base URI:
 
    | Surface | Path |
    |---|---|
    | Panel Viewer Path | `panel.html` |
+   | Mobile Path | `panel.html` |
    | Config Path | `config.html` |
    | Live Config Path | `live-config.html` |
 
 4. Keep the Extension in **Local Test**. Add your broadcaster and test viewer Twitch accounts to the Extension's testing allowlist. Activate the Extension panel on your own channel.
 5. Add the backend origin (for example `https://YOUR-SERVICE.run.app`) to the Extension's **Allowlist for URL Fetching Domains**. If CORS is restricted on the backend, allow the exact Extension test/hosted origins. These requests send a signed JWT and omit cookies, so they must never require browser session cookies.
 6. Copy the Extension's **base64-encoded shared secret** into the backend's `TWITCH_EXTENSION_SECRET`. Keep the secret base64 encoded; `verifyExtensionToken` decodes it before HMAC verification. Configure the Extension's client ID separately as `TWITCH_EXTENSION_CLIENT_ID` if tracking registration in deployment configuration.
-7. Open the Extension configuration page through Twitch. Enter the backend origin, save, and open the streamer dashboard. Backend URL configuration uses Twitch's broadcaster configuration segment; no credential is stored there.
+7. Enable **Extension Configuration Service** under Capabilities. Open the Extension configuration page through Twitch. Enter the backend origin, save, and open the streamer dashboard. Backend URL configuration uses Twitch's broadcaster configuration segment; no credential is stored there.
 8. Start a match in the dashboard as the broadcaster whose Twitch channel hosts the Extension. The panel resolves the active match by **signed channel ID**; a demo room belonging to another channel will not appear.
 9. Open the channel as an allowlisted, logged-in viewer. Submit a lie in the submission phase, edit it, and confirm the streamer cannot see it until finalists are shown. Verify the answer appears only at reveal.
 
@@ -65,9 +66,29 @@ An installed user-token chatbot can instead use **EventSub WebSocket** with `use
 
 ## Deployment integration checklist
 
-- Real Twitch credentials and a registered Extension are not part of the generated project. The dashboard must clearly show setup requirements until they are configured.
+- Keep real Twitch credentials in Secret Manager and out of the repository. The dashboard must clearly show setup requirements until they are configured.
 - The callback and Extension viewer pages use different credential types: OAuth client secret vs base64 Extension signing secret. They are not interchangeable.
 - `validateOrRefreshTwitchToken` is available for hourly retained-grant checks and for chat setup. The deployment must actually schedule those checks; importing the helper alone does not meet Twitch's validation requirement. On refresh, save the newest refresh token server-side. Network/5xx failures should be retried rather than treated as revoked grants.
 - `POST /api/twitch/connect-chat` subscribes the signed-in broadcaster's chat. Webhook verification uses `POST /api/twitch/eventsub`. Keep callback query authorization codes out of HTTP request logs.
 - Keep subscription lifecycle separate from message activity: pending before callback verification, enabled after verification, revoked on revocation, and last-message time updated on signed deliveries even between matches. A quiet chat is not evidence of a broken connection.
 - A multi-instance deployment needs durable EventSub receipt deduplication and must store subscription state in shared storage. In-memory connection maps are development optimizations, not authoritative records.
+
+## Production setup status — 2 November 2026
+
+- Live game: https://chatdidit-1077729822037.us-central1.run.app
+- OAuth application: **ChatDidIt**, client ID `pyp4yghbl6vwudxsl01w02bjx4d9iv`. Confidential application; callback is the live origin plus `/auth/twitch/callback`. Real broadcaster sign-in verified as `rehaancubes`.
+- OAuth client and EventSub secrets are stored in GCP Secret Manager, with runtime access scoped to each secret.
+- Extension: **ChatDidIt Game**, client ID `qyegie39taxu0qpf58qwiacrddpcvq`, version **0.0.1**, **Local Test**, Panel and Mobile. Own account is on the testing allowlist.
+- Saved hosting: live origin plus `/extension/`; panel/mobile `panel.html`, config `config.html`, live config `live-config.html`, panel height 500. Configuration Service is enabled and the live origin is allowlisted for URL fetching and links.
+- The exposed unused signing key was revoked and replaced by the user. Its replacement is stored in `chatdidit-twitch-extension` in Secret Manager and bound to the runtime. The temporary transfer file was removed.
+- Extension installed and active as **Panel 1** on `rehaancubes`. Broadcaster configuration contains the production backend URL (version `1`), verified through Twitch’s EBS configuration API. Real Twitch-issued tokens connected successfully; the embedded About-page panel and popout both rendered live round updates.
+- The only available real account was the broadcaster. Real second-account viewer submission and the Twitch mobile app remain unverified; isolated HTTP tests exercise signed viewer submissions, edits, CORS and SSE. Public release still requires Twitch review.
+- OpenAI is configured locally and in production through `chatdidit-openai` in Secret Manager. A small live selection request succeeded locally. Production `/api/me` reports AI configured.
+- Real Twitch chat permissions (`user:read:chat`, `user:bot`, `channel:bot`) were approved and granted. EventSub subscription setup completed; the dashboard reports chat connected. One explicitly approved test message was posted to the broadcaster’s own chat. Its real signed EventSub delivery updated the backend’s `lastMessageAt`; delivery is verified.
+- Latest game UI, audio and chat-first question behavior are deployed. Broadcaster question visibility is covered by REST and SSE tests, including an opaque-only broadcaster JWT.
+
+### Submission verification
+
+Production HTTP smoke test passed with `SMOKE_REQUIRE_OPENAI=true`: private submission/editing, host question privacy, actual OpenAI selection, five finalists, immutable lock, exactly one score, sourced reveal and next-round secrecy. Unit tests (28) and Extension REST/SSE smoke tests also pass.
+
+During Local Test, only allowlisted accounts see the unreleased Extension. Other judges/testers can use the standalone Twitch-authenticated game and viewer URL. Do not describe Local Test as a public Twitch release.

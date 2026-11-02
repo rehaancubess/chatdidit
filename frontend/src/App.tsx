@@ -490,10 +490,10 @@ function App() {
             </button>
             <span className="eyebrow">YOUR SHOW. YOUR RULES.</span>
             <h2 id="modal-title">
-              Your game. Your rules<span>.</span>
+              Choose your game<span>.</span>
             </h2>
             <p className="modal-intro">
-              Pick a mode, invite your chat, and let the bluffing begin.
+              Pick a mode and play. The show runs automatically.
             </p>
             <label className="field-label">Game mode</label>
             <div className="mode-select">
@@ -509,6 +509,8 @@ function App() {
                 </button>
               ))}
             </div>
+            <p className="setup-summary">{config.rounds} rounds · Chat writes for {config.submissionSeconds}s · You choose in {config.deceptionSeconds}s</p>
+            <details className="customize-game"><summary>Customize game</summary>
             <label className="field-label">Number of rounds</label>
             <div className="segmented">
               {[3, 5, 10].map((n) => (
@@ -549,6 +551,7 @@ function App() {
                 </select>
               </label>
             </div>
+            </details>
             <div className="info-note">
               <ShieldCheck size={18} />
               <p>
@@ -568,7 +571,7 @@ function App() {
               {working
                 ? 'Creating your room…'
                 : me.user
-                  ? 'Enter the lobby'
+                  ? 'Play'
                   : me.demoEnabled
                     ? 'Play a demo'
                     : 'Continue with Twitch'}
@@ -879,29 +882,48 @@ function GameRoom({
       notify('Audio isn’t available in this browser.');
     }
   }
-  useEffect(() => {
-    if (!game || !soundEnabled || game.phase !== 'reveal' || !audioRef.current) return;
-    const key = id + ':' + game.round;
-    if (lastCue.current === key) return;
-    lastCue.current = key;
+  function playCue(notes: number[], duration = 0.16, volume = 0.045) {
     const context = audioRef.current;
-    const won = !!game.selectedOptionId && !game.reveal?.fooled;
-    const notes = won ? [523.25, 659.25, 783.99] : [261.63, 220, 164.81];
+    if (!context || context.state !== 'running') return;
     notes.forEach((frequency, i) => {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
-      const start = context.currentTime + i * 0.09;
-      oscillator.type = 'sine';
-      oscillator.frequency.value = frequency;
+      const start = context.currentTime + i * duration * 0.7;
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(frequency, start);
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.045, start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
+      gain.gain.linearRampToValueAtTime(volume, start + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
       oscillator.connect(gain);
       gain.connect(context.destination);
       oscillator.start(start);
-      oscillator.stop(start + 0.3);
+      oscillator.stop(start + duration + 0.02);
+      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
     });
-  }, [game?.phase, game?.round, soundEnabled, id]);
+  }
+  useEffect(() => {
+    if (!game || !soundEnabled || game.paused) return;
+    const key = id + ':' + game.round + ':' + game.phase;
+    if (lastCue.current === key) return;
+    lastCue.current = key;
+    if (game.phase === 'question') playCue([392, 523, 784], 0.22);
+    else if (game.phase === 'submission') playCue([440, 660], 0.18);
+    else if (game.phase === 'deception') playCue([392, 494, 587, 784], 0.18);
+    else if (game.phase === 'locked') playCue([220, 110], 0.13);
+    else if (game.phase === 'reveal') {
+      const won = !!game.selectedOptionId && !game.reveal?.fooled;
+      playCue(won ? [523, 659, 784, 1047] : [330, 277, 220, 165], 0.25);
+    } else if (game.phase === 'finished') playCue([523, 659, 784, 1047, 784, 1047], 0.28);
+  }, [game?.phase, game?.round, game?.paused, soundEnabled, id]);
+  const lastTick = useRef('');
+  useEffect(() => {
+    if (!game || !soundEnabled || game.paused || !['submission', 'deception'].includes(game.phase)) return;
+    const remaining = Math.ceil(((game.deadline || 0) - now) / 1000);
+    const key = `${game.round}:${game.phase}:${remaining}`;
+    if (remaining < 1 || remaining > 5 || lastTick.current === key) return;
+    lastTick.current = key;
+    playCue([remaining === 1 ? 880 : 660], 0.07, 0.025);
+  }, [now, game?.phase, game?.round, game?.paused, soundEnabled]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (
@@ -986,6 +1008,7 @@ function GameRoom({
   const stageIndex = game.phase === 'locked' ? 3 : stages.findIndex((x) => x.key === game.phase);
   const phase = game.phase;
   const reveal = game.reveal;
+  const questionHidden = !isViewer && ['question', 'submission', 'selection'].includes(phase);
   const canHost = !isViewer && !isOverlay && game.canControl !== false;
   const modeName = modes.find((m) => m.id === game.mode)?.label || game.mode;
   const roomUrl = location.origin + '/play/' + id;
@@ -1028,23 +1051,19 @@ function GameRoom({
             </p>
           </div>
           <div className="room-share">
-            <button
-              className={`sound-button ${soundEnabled ? 'on' : ''}`}
-              onClick={toggleSound}
-              aria-pressed={soundEnabled}
-              title="Toggle reveal sounds"
-            >
-              {soundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />}
-              <span>Sound {soundEnabled ? 'on' : 'off'}</span>
-            </button>
-            <button className="button button-outline" onClick={() => copy(roomUrl)}>
-              <Link2 size={16} />
-              Invite viewers
-            </button>
-            <button className="button button-dark" onClick={() => copy(obsUrl)}>
-              <Copy size={16} />
-              Copy OBS link
-            </button>
+            <button className="button button-outline" onClick={toggleSound} aria-pressed={soundEnabled}>{soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />} Sound {soundEnabled ? 'on' : 'off'}</button>
+            <button className="button button-outline" onClick={() => copy(roomUrl)}><Link2 size={16} /> Invite players</button>
+            <details className="show-menu"><summary><Settings2 size={17} /> Game menu</summary>
+              <div className="show-menu-content">
+                <button onClick={toggleSound}>{soundEnabled ? 'Turn sound off' : 'Turn sound on'}</button>
+                <button onClick={() => copy(obsUrl)}>Copy OBS display link</button>
+                {canHost && !['lobby','finished'].includes(phase) && <>
+                  <button disabled={busy || phase === 'selection'} onClick={() => action(game.paused ? 'resume' : 'pause')}>{game.paused ? 'Resume show' : 'Pause show'}</button>
+                  <button disabled={busy} onClick={() => { if(confirm('End this match and show the final score?')) action('end'); }}>End match</button>
+                </>}
+                {canHost && <ChatConnection me={me} id={id} notify={notify} />}
+              </div>
+            </details>
           </div>
         </div>
       )}
@@ -1136,11 +1155,9 @@ function GameRoom({
           <div className="stage-body">
             <div className="round-eyebrow">
               {phase === 'reveal'
-                ? !game.selectedOptionId
-                  ? 'TIME’S UP.'
-                  : reveal?.fooled
-                    ? 'CHAT DID IT!'
-                    : 'NICE TRY, CHAT.'
+                ? !game.selectedOptionId || reveal?.fooled
+                  ? 'CHAT DID IT!!'
+                  : 'NICE TRY, CHAT.'
                 : phase === 'finished'
                   ? 'THE FINAL SCORE'
                   : phase === 'lobby'
@@ -1163,37 +1180,7 @@ function GameRoom({
                     ? 'You’re in. Get your best lies ready.'
                     : 'The room is ready. Share the link, then start the show.'}
                 </p>
-                {canHost && (
-                  <div className="lobby-checklist">
-                    <div>
-                      <span>1</span>
-                      <strong>Invite the crew</strong>
-                      <p>Share your private viewer link.</p>
-                      <button onClick={() => copy(roomUrl)}>
-                        <Copy size={13} />
-                        Copy invite
-                      </button>
-                    </div>
-                    <div>
-                      <span>2</span>
-                      <strong>Set up your stream</strong>
-                      <p>Add the display to OBS.</p>
-                      <button onClick={() => copy(obsUrl)}>
-                        <Layers3 size={13} />
-                        Copy OBS link
-                      </button>
-                    </div>
-                    <div>
-                      <span>3</span>
-                      <strong>Start the trouble</strong>
-                      <p>Chat writes. You decide.</p>
-                      <span className="ready-tag">
-                        <Check size={13} />
-                        READY TO PLAY
-                      </span>
-                    </div>
-                  </div>
-                )}
+                {canHost && <p className="lobby-auto-note">Invite your players above. Once you start, every round flows automatically.</p>}
                 {canHost && (
                   <button
                     className="button button-lime"
@@ -1212,7 +1199,7 @@ function GameRoom({
                   {game.scores.chat === game.scores.streamer
                     ? 'A worthy conspiracy.'
                     : game.scores.chat > game.scores.streamer
-                      ? 'Chat did it.'
+                      ? 'CHAT DID IT!!'
                       : 'Truth wins this time.'}
                 </h2>
                 <p>
@@ -1240,7 +1227,7 @@ function GameRoom({
             ) : (
               <>
                 <h2 className="stage-question">
-                  {game.question?.prompt || 'The next question is on its way.'}
+                  {questionHidden ? 'Chat knows something you don’t.' : game.question?.prompt || 'The next question is on its way.'}
                 </h2>
                 {phase === 'submission' && (
                   <div className="submission-stage">
@@ -1252,7 +1239,7 @@ function GameRoom({
                     <p>
                       {isViewer
                         ? 'Submit a convincing fake answer below.'
-                        : 'The answers are private. The conspiracy is very real.'}
+                        : 'The question is for chat’s eyes only. You’ll see it with the answers.'}
                     </p>
                     <div className="participant-count">
                       <Users size={18} />
@@ -1275,7 +1262,7 @@ function GameRoom({
                 {phase === 'question' && (
                   <div className="get-ready">
                     <Sparkles size={28} />
-                    <p>Take a moment. The lies are coming.</p>
+                    <p>{isViewer ? 'Read the question. Get your lie ready.' : 'Chat sees the question first. Your reveal is coming.'}</p>
                   </div>
                 )}
                 {showOptions && ['deception', 'locked', 'reveal'].includes(phase) && (
@@ -1301,6 +1288,11 @@ function GameRoom({
                   </div>
                 )}
                 {canHost && phase === 'deception' && (
+                  <button className="button button-lime stage-lock" onClick={() => action('lock', selected)} disabled={busy || !selected || game.paused}>
+                    <ShieldCheck size={18} /> {selected ? 'Lock in my answer' : 'Choose an answer above'}
+                  </button>
+                )}
+                {canHost && phase === 'deception' && (
                   <div className="keyboard-hint">
                     <span>
                       <kbd>1</kbd>–<kbd>5</kbd> choose
@@ -1317,20 +1309,20 @@ function GameRoom({
                   </div>
                 )}
                 {phase === 'reveal' && reveal && (
-                  <div className={`reveal-note ${reveal.fooled ? 'fooled' : ''}`}>
+                  <div className={`reveal-note ${reveal.fooled || !game.selectedOptionId ? 'fooled' : ''}`}>
                     <div>
                       <span>
                         {!game.selectedOptionId || reveal.fooled ? 'CHAT +1' : 'STREAMER +1'}
                       </span>
                       <h3>
                         {!game.selectedOptionId
-                          ? 'Time ran out. Chat takes the point.'
+                          ? 'CHAT DID IT!!'
                           : reveal.fooled
-                            ? 'You believed the lie.'
+                            ? 'CHAT DID IT!!'
                             : 'You found the truth.'}
                       </h3>
                     </div>
-                    <p>{reveal.explanation}</p>
+                    <p>{!game.selectedOptionId ? 'Time ran out. Chat takes the point. ' : reveal.fooled ? 'You believed the lie. ' : ''}{reveal.explanation}</p>
                     {reveal.contributors?.length > 0 && (
                       <div className="contributor-credit">
                         <Sparkles size={14} />
@@ -1363,7 +1355,7 @@ function GameRoom({
           <div className="stage-bottom game-stage-footer">
             <span>
               <ShieldCheck size={13} />
-              SERVER-VERIFIED · NO SPOILERS
+              TRUST YOUR INSTINCTS
             </span>
             <strong>{game.paused ? 'GAME PAUSED' : phaseLabels[phase]}</strong>
             <span>{game.submissionCount.toLocaleString()} LIES SUBMITTED</span>
@@ -1472,143 +1464,12 @@ function GameRoom({
                 )}
               </>
             ) : (
-              <>
-                <div className="panel-eyebrow">
-                  <Settings2 size={17} />
-                  HOST CONTROLS
-                </div>
-                <h3>{phaseLabels[phase] || 'Your game'}</h3>
-                <p className="panel-description">
-                  {phase === 'deception'
-                    ? 'Listen to chat, trust your instincts, and lock in one answer.'
-                    : phase === 'lobby'
-                      ? 'Invite your community and add the display to OBS. Then you’re ready to go live.'
-                      : 'The server keeps the clock. You keep the show moving.'}
-                </p>
-                {game.canControl === false ? (
-                  <div className="info-note">
-                    <ShieldCheck size={17} />
-                    <p>This room belongs to another host. Join through the viewer link.</p>
-                  </div>
-                ) : (
-                  <div className="control-stack">
-                    {phase === 'lobby' ? (
-                      <button
-                        className="button button-dark full-width"
-                        onClick={() => action('start')}
-                        disabled={busy}
-                      >
-                        <Play size={17} />
-                        Start game
-                      </button>
-                    ) : phase === 'deception' ? (
-                      <button
-                        className="button button-dark full-width"
-                        onClick={() => action('lock', selected)}
-                        disabled={busy || !selected || game.paused}
-                      >
-                        <ShieldCheck size={17} />
-                        Lock in{' '}
-                        {selected
-                          ? String.fromCharCode(
-                              49 + game.options.findIndex((x) => x.id === selected),
-                            )
-                          : 'your answer'}
-                      </button>
-                    ) : null}
-                    {!['lobby', 'finished'].includes(phase) && (
-                      <>
-                        <button
-                          className="button button-outline full-width"
-                          onClick={() => action(game.paused ? 'resume' : 'pause')}
-                          disabled={busy || phase === 'selection'}
-                        >
-                          {game.paused ? <Play size={16} /> : <Pause size={16} />}{' '}
-                          {game.paused ? 'Resume game' : 'Pause game'}
-                        </button>
-                        <button
-                          className="button button-quiet full-width"
-                          onClick={() => action('advance')}
-                          disabled={
-                            busy || game.paused || ['deception', 'selection'].includes(phase)
-                          }
-                        >
-                          <SkipForward size={16} />
-                          {phase === 'reveal'
-                            ? game.round >= game.totalRounds
-                              ? 'See final score'
-                              : 'Next round'
-                            : phase === 'question'
-                              ? 'Let chat write'
-                              : phase === 'submission'
-                                ? 'Close submissions'
-                                : phase === 'locked'
-                                  ? 'Reveal the truth'
-                                  : 'Continue'}
-                        </button>
-                      </>
-                    )}
-                    {!['lobby', 'finished'].includes(phase) && (
-                      <button
-                        className="end-button"
-                        onClick={() => {
-                          if (confirm('End this match and show the final score?')) action('end');
-                        }}
-                        disabled={busy}
-                      >
-                        End match
-                      </button>
-                    )}
-                  </div>
-                )}
-                {me.demoEnabled && ['lobby', 'submission'].includes(phase) && (
-                  <div className="demo-audience">
-                    <span>DEMO TOOLS</span>
-                    <p>Try a full round with clearly labeled sample lies.</p>
-                    <button
-                      className="button button-outline full-width"
-                      disabled={busy || phase !== 'submission'}
-                      onClick={async () => {
-                        setBusy(true);
-                        try {
-                          await api('/api/games/' + id + '/demo-audience', {});
-                          notify('Demo audience submissions added.');
-                        } catch (e) {
-                          notify((e as Error).message);
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
-                    >
-                      <Users size={15} />
-                      Add demo audience
-                    </button>
-                    {phase === 'lobby' && <small>Available during the submission phase.</small>}
-                  </div>
-                )}
-                {canHost && <ChatConnection me={me} id={id} notify={notify} />}
-                <div className="room-link-card">
-                  <span>VIEWER ROOM</span>
-                  <code>{id.slice(0, 20)}</code>
-                  <button className="text-link" onClick={() => copy(roomUrl)}>
-                    Copy invite link <Copy size={13} />
-                  </button>
-                  <a href={'/play/' + id} target="_blank" rel="noreferrer">
-                    Open viewer page <ExternalLink size={13} />
-                  </a>
-                </div>
-                <div className="obs-note">
-                  <Layers3 size={18} />
-                  <p>
-                    OBS browser source
-                    <br />
-                    <strong>1920 × 1080</strong>
-                    <button onClick={() => window.open('/overlay/' + id, '_blank')}>
-                      Preview display <ExternalLink size={12} />
-                    </button>
-                  </p>
-                </div>
-              </>
+              <div className="auto-show-cue" role="status">
+                <span className="auto-show-badge"><Radio size={14} /> AUTOMATIC SHOW</span>
+                <strong>{game.paused ? 'Show paused' : phase === 'lobby' ? 'Ready when you are' : phase === 'finished' ? 'That’s a wrap' : phase === 'deception' ? 'Your moment. Pick the truth.' : phase === 'reveal' ? (game.round >= game.totalRounds ? `Final scores in ${seconds}s` : `Next round in ${seconds}s`) : phase === 'submission' ? `Chat is writing · ${game.submissionCount} lies in` : phase === 'selection' ? 'Mixing truth with trouble…' : phase === 'locked' ? 'Here comes the truth…' : 'Chat gets a head start. Your question comes with the choices.'}</strong>
+                {game.paused && canHost && <button className="button button-lime" onClick={() => action('resume')} disabled={busy}><Play size={16} /> Resume show</button>}
+                {canHost && me.user?.demo && phase === 'submission' && <button className="button button-outline" disabled={busy || game.paused} onClick={async () => { setBusy(true); try { await api('/api/games/' + id + '/demo-audience', {}); } catch(e) { notify((e as Error).message); } finally { setBusy(false); } }}>Add demo audience</button>}
+              </div>
             )}
             <div className="connection-line">
               <span className={connected ? 'connected' : ''} />

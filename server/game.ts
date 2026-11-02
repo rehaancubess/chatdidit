@@ -202,7 +202,7 @@ export class GameEngine {
       mode: game.mode,
       round: game.round,
       totalRounds: game.config.rounds,
-      question: game.question
+      question: game.question && !(viewerId === game.hostId && ['question', 'submission', 'selection'].includes(game.phase))
         ? { prompt: game.question.prompt, category: game.question.category }
         : null,
       options: visible ? game.options.map(({ id, text }) => ({ id, text })) : [],

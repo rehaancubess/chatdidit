@@ -171,3 +171,19 @@ test('10,000 distinct identities submit without changing the hot game revision',
   f.advance(1001); // Aggregate counts intentionally publish at most once per second.
   assert.equal((await f.engine.getState(id)).submissionCount, 10_000);
 });
+
+test('question reaches viewers first and the host only when choices appear', async () => {
+  const f = fixture();
+  const { gameId: id } = await f.engine.createGame('channel', 'host', { rounds: 1, mode: 'fact' });
+  await f.engine.action(id, 'host', 'start');
+  assert.equal((await f.engine.getState(id, 'host')).question, null);
+  assert.ok((await f.engine.getState(id, 'viewer')).question?.prompt);
+  await f.engine.action(id, 'host', 'advance');
+  assert.equal((await f.engine.getState(id, 'host')).question, null);
+  assert.ok((await f.engine.getState(id, 'viewer')).question?.prompt);
+  await f.engine.action(id, 'host', 'advance');
+  assert.equal((await f.engine.getState(id, 'host')).question, null);
+  f.advance(5001);
+  await f.engine.tick(id);
+  assert.ok((await f.engine.getState(id, 'host')).question?.prompt);
+});

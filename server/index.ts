@@ -177,6 +177,7 @@ function attachStream(id: string, client: StreamClient) {
         for (const c of entry.clients) {
           const data = JSON.stringify({
             ...state,
+            question: c.userId === record?.hostId && ['question', 'submission', 'selection'].includes(state.phase) ? null : state.question,
             canControl: Boolean(c.userId && record?.hostId === c.userId),
           });
           if (c.reply.raw.writableLength > 128_000) {
@@ -448,7 +449,8 @@ app.get('/api/extension/state', async (req) => {
   const id = await channelGame(channelId);
   if (!id) return { game: null };
   if (await engine.tick(id)) await scheduleGame(id);
-  return { game: await engine.getState(id, identity.userId || `ext:${identity.opaqueUserId}`) };
+  const viewerId = identity.role === 'broadcaster' ? identity.channelId : identity.userId || `ext:${identity.opaqueUserId}`;
+  return { game: await engine.getState(id, viewerId) };
 });
 app.get('/api/extension/events', async (req, reply) => {
   const channelId = String((req.query as any).channelId || '');
@@ -456,7 +458,7 @@ app.get('/api/extension/events', async (req, reply) => {
   const id = await channelGame(channelId);
   if (!id) return reply.code(404).send({ game: null });
   startEventStream(reply);
-  const viewerId = identity.userId || `ext:${identity.opaqueUserId}`;
+  const viewerId = identity.role === 'broadcaster' ? identity.channelId : identity.userId || `ext:${identity.opaqueUserId}`;
   reply.raw.write(`data: ${JSON.stringify(await engine.getState(id, viewerId))}\n\n`);
   attachStream(id, { reply, userId: viewerId });
 });
@@ -478,8 +480,15 @@ app.post(
   async (req) => {
     const data = body(req),
       channelId = String(data.channelId || ''),
-      identity = extensionIdentity(req, channelId),
-      id = await channelGame(channelId);
+      identity = extensionIdentity(req, channelId);
+    // Broadcasters may withhold their Twitch user ID in an Extension. Their signed role
+    // must still block host submissions instead of treating the opaque ID as a viewer.
+    if (identity.role === 'broadcaster')
+      throw Object.assign(new Error('The broadcaster cannot submit a lie in their own game.'), {
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+    const id = await channelGame(channelId);
     if (!id) throw Object.assign(new Error('No active game in this channel.'), { statusCode: 404 });
     await engine.submit(
       id,

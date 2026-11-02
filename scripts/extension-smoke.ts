@@ -188,6 +188,29 @@ try {
       cookie: hostCookie,
     });
   const token = jwt();
+  const broadcasterToken = jwt({
+    role: 'broadcaster',
+    opaque_user_id: 'Ubroadcaster-unshared',
+    // Deliberately no user_id: role must prevent submissions before identity sharing.
+  });
+  const blockedBroadcaster = await json('/api/extension/submissions', {
+    method: 'POST',
+    body: { channelId, text: 'A broadcaster trying to blend in with chat' },
+    token: broadcasterToken,
+    origin: extensionOrigin,
+    expected: 403,
+  });
+  assert.equal(blockedBroadcaster.code, 'FORBIDDEN');
+  const broadcasterState = await json(`/api/extension/state?channelId=${channelId}`, {
+    token: broadcasterToken,
+    origin: extensionOrigin,
+  });
+  assert.equal(broadcasterState.game.ownSubmission, undefined);
+  assert.equal(broadcasterState.game.question, null);
+  const broadcasterEvent = await firstEvent(broadcasterToken, extensionOrigin);
+  assert.ok(broadcasterEvent);
+  assert.equal(broadcasterEvent.question, null);
+  console.log('PASS signed broadcaster JWT cannot submit through an unshared opaque identity');
   const lie = 'An early prototype for underwater hats';
   await json('/api/extension/submissions', {
     method: 'POST',
@@ -200,6 +223,7 @@ try {
     origin: extensionOrigin,
   });
   assert.equal(privateState.game.ownSubmission.text, lie);
+  assert.ok(privateState.game.question?.prompt);
   const initial = await firstEvent(token, extensionOrigin);
   assert.ok(initial);
   assert.equal(initial.id, gameId);
