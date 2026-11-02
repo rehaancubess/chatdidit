@@ -749,6 +749,23 @@ function HallOfLies({ openCreate }: { openCreate: () => void }) {
     </>
   );
 }
+function GameMascot({ phase, chatWon, paused = false, large = false }: {
+  phase: string;
+  chatWon: boolean;
+  paused?: boolean;
+  large?: boolean;
+}) {
+  const result = phase === 'reveal' || phase === 'finished';
+  const mood = paused ? 'nervous' : result ? (chatWon ? 'victory' : 'sulk') : ['deception', 'locked'].includes(phase) ? 'nervous' : 'scheme';
+  const line = paused ? 'Okay. Dramatic pause.' : result ? (chatWon ? 'We are SO believable.' : 'Lucky guess. Obviously.') : phase === 'submission' ? 'Psst. Make it believable.' : phase === 'selection' ? 'Cooking up trouble…' : phase === 'deception' ? 'Act natural. ACT NATURAL.' : phase === 'locked' ? 'No taking it back now.' : 'Your chat. My accomplices.';
+  return (
+    <div className={`game-mascot mood-${mood} ${large ? 'mascot-large' : 'mascot-small'}`}>
+      <div className="mascot-sprite" role="img" aria-label={`Chat creature: ${mood === 'scheme' ? 'mischievous' : mood === 'victory' ? 'celebrating' : mood === 'sulk' ? 'playfully defeated' : 'nervous'}`} />
+      {!large && <span className="mascot-quip">{line}</span>}
+    </div>
+  );
+}
+
 function GameRoom({
   id,
   kind,
@@ -1008,6 +1025,7 @@ function GameRoom({
   const stageIndex = game.phase === 'locked' ? 3 : stages.findIndex((x) => x.key === game.phase);
   const phase = game.phase;
   const reveal = game.reveal;
+  const chatWon = phase === 'finished' ? game.scores.chat > game.scores.streamer : !game.selectedOptionId || Boolean(reveal?.fooled);
   const questionHidden = !isViewer && ['question', 'submission', 'selection'].includes(phase);
   const canHost = !isViewer && !isOverlay && game.canControl !== false;
   const modeName = modes.find((m) => m.id === game.mode)?.label || game.mode;
@@ -1194,7 +1212,7 @@ function GameRoom({
               </div>
             ) : phase === 'finished' ? (
               <div className="finished-content">
-                <Trophy size={48} />
+                <GameMascot phase="finished" chatWon={chatWon} large />
                 <h2>
                   {game.scores.chat === game.scores.streamer
                     ? 'A worthy conspiracy.'
@@ -1310,6 +1328,7 @@ function GameRoom({
                 )}
                 {phase === 'reveal' && reveal && (
                   <div className={`reveal-note ${reveal.fooled || !game.selectedOptionId ? 'fooled' : ''}`}>
+                    <div className="reveal-mascot" aria-hidden="true"><GameMascot phase="reveal" chatWon={chatWon} large /></div>
                     <div>
                       <span>
                         {!game.selectedOptionId || reveal.fooled ? 'CHAT +1' : 'STREAMER +1'}
@@ -1353,10 +1372,7 @@ function GameRoom({
             )}
           </div>
           <div className="stage-bottom game-stage-footer">
-            <span>
-              <ShieldCheck size={13} />
-              TRUST YOUR INSTINCTS
-            </span>
+            <GameMascot phase={phase} chatWon={chatWon} paused={game.paused} />
             <strong>{game.paused ? 'GAME PAUSED' : phaseLabels[phase]}</strong>
             <span>{game.submissionCount.toLocaleString()} LIES SUBMITTED</span>
           </div>

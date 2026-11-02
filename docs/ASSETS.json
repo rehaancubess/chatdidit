@@ -13,6 +13,11 @@
     {
       "file": "frontend/public/assets/mode-definitions.png",
       "prompt": "Use case: stylized-concept. Asset type: square mode card art for a premium audience deception word game. A small sculptural stack of cream dictionary books with black covers, with a lime green chunky chat bubble rising from the open top book and a tiny lavender floating asterisk. Warm apricot orange studio background, premium editorial 3D rendering, matte paper and rubber textures, sophisticated clean playful look. Centered clean composition, soft studio shadows, generous negative space, absolutely no readable words no logos no watermark."
+    },
+    {
+      "file": "frontend/public/assets/chatdidit-mascot.png",
+      "promptFile": "docs/MASCOT_ASSET.json",
+      "format": "Transparent 2x2 sprite atlas: scheme, nervous, victory, sulk"
     }
   ]
 }
