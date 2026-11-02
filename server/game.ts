@@ -1,3 +1,4 @@
+import { TOPICS, roundCapacity, type Topic } from '../shared/topics.js';
 import { randomInt, randomUUID } from 'node:crypto';
 import { GameAI, normalize, validateText, type SelectionAI } from './ai.js';
 import { QUESTIONS, type GameMode, type Question } from './questions.js';
@@ -13,6 +14,7 @@ export type Phase =
   | 'reveal'
   | 'finished';
 export interface GameConfig {
+  topic?: Topic;
   rounds: number;
   submissionSeconds: number;
   deceptionSeconds: number;
@@ -46,8 +48,10 @@ export interface GameRecord {
   selectedOptionId: string | null;
   aiMode: 'openai' | 'demo' | 'fallback';
   usedCategories?: string[];
+  finishReason?: string;
 }
 export interface PublicGame {
+  finishReason?: string;
   id: string;
   channelId: string;
   phase: Phase;
@@ -118,12 +122,32 @@ export class GameEngine {
       revision: game.revision + 1,
     });
   }
+  async catalog(channelId?: string) {
+    const unseen = new Set(channelId ? await this.store.unseenFactIds(channelId, QUESTIONS.map(q => q.factId)) : QUESTIONS.map(q => q.factId));
+    const counts = (questions: Question[]) => ({ fact: questions.filter(q => q.mode === 'fact').length, definition: questions.filter(q => q.mode === 'definition').length });
+    return {
+      totalQuestions: QUESTIONS.length,
+      modes: [{ id: 'fact', name: 'Fact or Fiction', count: counts(QUESTIONS).fact }, { id: 'definition', name: 'Define That!', count: counts(QUESTIONS).definition }],
+      topics: TOPICS.map(topic => {
+        const pack = QUESTIONS.filter(q => topic.id === 'anything' || q.topics.includes(topic.id));
+        return { ...topic, counts: counts(pack), available: counts(pack.filter(q => unseen.has(q.factId))) };
+      }),
+    };
+  }
   async createGame(channelId: string, hostId: string, config: Partial<GameConfig> = {}) {
     if (!channelId || !hostId)
       throw new GameError('A channel and authenticated host are required.', 401);
     const selectedMode = ['fact', 'definition', 'mixed'].includes(config.mode || '')
       ? config.mode!
       : 'mixed';
+    const topic = config.topic ?? 'anything';
+    if (!TOPICS.some(t => t.id === topic)) throw new GameError('Choose a valid topic.', 400, 'INVALID_TOPIC');
+    const rounds = clamp(config.rounds, 5, 1, 10);
+    const pack = (await this.catalog(channelId)).topics.find(t => t.id === topic)!;
+    const capacity = roundCapacity(selectedMode, pack.available);
+    if (rounds > capacity) throw new GameError(
+      capacity ? `Only ${capacity} fresh rounds remain for ${pack.label} in this mode. Choose fewer rounds or another topic.` : `You’ve played every question in ${pack.label} for this mode. Choose another topic or mode.`,
+      409, 'QUESTION_BANK_EXHAUSTED');
     const game: GameRecord = {
       id: randomUUID(),
       channelId,
@@ -135,7 +159,8 @@ export class GameEngine {
       mode: selectedMode === 'mixed' ? 'fact' : selectedMode,
       round: 0,
       config: {
-        rounds: clamp(config.rounds, 5, 1, 10),
+        rounds,
+        topic,
         submissionSeconds: clamp(config.submissionSeconds, 30, 15, 60),
         deceptionSeconds: clamp(config.deceptionSeconds, 25, 15, 60),
         mode: selectedMode,
@@ -215,7 +240,8 @@ export class GameEngine {
       scores: { ...game.scores },
       selectedOptionId: game.selectedOptionId,
       aiMode: game.aiMode,
-      config: { ...game.config },
+      config: { ...game.config, topic: game.config.topic ?? 'anything' },
+      ...(game.finishReason ? { finishReason: game.finishReason } : {}),
     };
     if (viewerId && game.round) {
       const own = await this.store.getSubmission(game.id, game.round, viewerId);
@@ -264,7 +290,7 @@ export class GameEngine {
       mode = game.config.mode === 'mixed' ? (round % 2 ? 'fact' : 'definition') : game.config.mode;
     const categories = game.usedCategories ?? [];
     const frequency = (category: string) => categories.filter((c) => c === category).length;
-    const candidates = shuffled(QUESTIONS.filter((q) => q.mode === mode)).sort(
+    const candidates = shuffled(QUESTIONS.filter((q) => q.mode === mode && (!game.config.topic || game.config.topic === 'anything' || q.topics.includes(game.config.topic)))).sort(
       (a, b) => frequency(a.category) - frequency(b.category),
     );
     const factId = await this.store.reserveQuestion(
@@ -272,12 +298,11 @@ export class GameEngine {
       candidates.map((q) => q.factId),
       `${game.id}:${round}`,
     );
-    if (!factId)
-      throw new GameError(
-        'This channel has played every verified question in this mode. Choose another mode or add a verified question pack.',
-        409,
-        'QUESTION_BANK_EXHAUSTED',
-      );
+    if (!factId) {
+      if (!game.round) throw new GameError('No fresh questions remain in this topic and mode. Choose another topic.', 409, 'QUESTION_BANK_EXHAUSTED');
+      return { ...game, phase: 'finished', active: false, deadline: null, paused: false,
+        finishReason: 'All fresh questions in this topic have been played. Choose another topic for your next show.' };
+    }
     const question = candidates.find((q) => q.factId === factId)!;
     return {
       ...game,

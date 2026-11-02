@@ -1,5 +1,8 @@
+import type { ContentTopic } from '../shared/topics.js';
+import { TOPIC_QUESTIONS } from './topic-questions.js';
 export type GameMode = 'fact' | 'definition';
 export interface Question {
+  topics: ContentTopic[];
   id: string;
   factId: string;
   mode: GameMode;
@@ -17,7 +20,7 @@ const definition = (
   answer: string,
   fillers: string[],
   explanation?: string,
-): Question => ({
+): Omit<Question, 'topics'> => ({
   id: `word-${word}`,
   factId: `definition:${word}`,
   mode: 'definition',
@@ -34,7 +37,7 @@ const definition = (
  * Never silently recycle this bank: exhaustion asks the host to choose another mode.
  * New generated questions require editorial/source verification before insertion here.
  */
-export const QUESTIONS: Question[] = [
+const ORIGINAL_QUESTIONS: Omit<Question, 'topics'>[] = [
   {
     id: 'bubble-wrap-wallpaper',
     factId: 'invention:bubble-wrap:wallpaper',
@@ -329,4 +332,19 @@ export const QUESTIONS: Question[] = [
     'A short poem about winter',
     'A belt worn over armor',
   ]),
+];
+
+const topicTags: Record<string, ContentTopic[]> = {
+  'nintendo-first-product': ['gaming', 'history'],
+  'venus-rotation': ['science', 'weird'],
+  'eiffel-summer': ['science', 'weird'],
+  'velcro-burdock': ['science', 'weird'],
+  'word-zugzwang': ['gaming', 'weird'],
+  'word-petrichor': ['science', 'weird'],
+  'word-borborygmus': ['science', 'weird'],
+  'word-crepuscular': ['science', 'weird'],
+};
+export const QUESTIONS: Question[] = [
+  ...ORIGINAL_QUESTIONS.map(q => ({ ...q, topics: topicTags[q.id] ?? ['weird'] as ContentTopic[] })),
+  ...TOPIC_QUESTIONS,
 ];

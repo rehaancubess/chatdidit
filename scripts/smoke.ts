@@ -20,9 +20,10 @@ const host = (await call('/api/demo/session', {})).cookie;
 const viewer = (await call('/api/demo/session', {})).cookie;
 const { value: created } = await call(
   '/api/games',
-  { rounds: 3, mode: 'mixed', submissionSeconds: 60, deceptionSeconds: 60 },
+  { rounds: 3, mode: 'mixed', topic: process.env.SMOKE_TOPIC || 'anything', submissionSeconds: 60, deceptionSeconds: 60 },
   host,
 );
+assert.equal(created.state.config.topic, process.env.SMOKE_TOPIC || 'anything');
 const id = created.gameId;
 const action = (action: string, optionId?: string, cookie = host, status = 200) =>
   call(`/api/games/${id}/actions`, { action, optionId }, cookie, status);

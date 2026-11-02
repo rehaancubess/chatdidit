@@ -10,7 +10,6 @@ import { Firestore } from '@google-cloud/firestore';
 import { GameEngine, GameError } from './game.js';
 import { createStore } from './store.js';
 import { GameAI } from './ai.js';
-import { QUESTIONS } from './questions.js';
 import * as twitch from './twitch.js';
 import { ChatConnections } from './chat.js';
 import { GameTaskScheduler } from './tasks.js';
@@ -221,21 +220,7 @@ app.get('/api/health', async () => ({
   service: 'chatdidit',
   store: db ? 'firestore' : 'memory',
 }));
-app.get('/api/catalog', async () => ({
-  totalQuestions: QUESTIONS.length,
-  modes: [
-    {
-      id: 'fact',
-      name: 'Fact or Fiction',
-      count: QUESTIONS.filter((q) => q.mode === 'fact').length,
-    },
-    {
-      id: 'definition',
-      name: 'Define That!',
-      count: QUESTIONS.filter((q) => q.mode === 'definition').length,
-    },
-  ],
-}));
+app.get('/api/catalog', async (req) => engine.catalog(user(req)?.userId));
 app.get('/api/me', async (req) => {
   const session = user(req);
   return {

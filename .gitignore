@@ -8,3 +8,7 @@ coverage/
 *.log
 tmp/
 loadtest-results/
+
+# Local submission-video working files and renders
+submission-video/
+video-work/

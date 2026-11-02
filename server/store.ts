@@ -18,6 +18,7 @@ export interface GameStore {
   countSubmissions(gameId: string, round: number): Promise<number>;
   listActiveGames(): Promise<GameRecord[]>;
   findActiveGameByChannel(channelId: string): Promise<GameRecord | null>;
+  unseenFactIds(channelId: string, factIds: string[]): Promise<string[]>;
   reserveQuestion(
     channelId: string,
     factIds: string[],
@@ -79,6 +80,9 @@ export class MemoryStore implements GameStore {
         .filter((g) => g.active && g.channelId === channelId)
         .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null,
     );
+  }
+  async unseenFactIds(channelId: string, factIds: string[]) {
+    return factIds.filter(id => !this.seen.has(`${channelId}:${id}`));
   }
   async reserveQuestion(channelId: string, factIds: string[], reservationId: string) {
     const reserved = factIds.find(
@@ -170,6 +174,12 @@ export class FirestoreStore implements GameStore {
       await this.db.collection('games').where('channelId', '==', channelId).get()
     ).docs.map((d) => d.data() as GameRecord);
     return games.filter((g) => g.active).sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+  }
+  async unseenFactIds(channelId: string, factIds: string[]) {
+    if (!factIds.length) return [];
+    const refs = factIds.map(id => this.db.collection('channels').doc(key(channelId)).collection('seenFacts').doc(key(id)));
+    const snapshots = await this.db.getAll(...refs);
+    return factIds.filter((_, i) => !snapshots[i].exists);
   }
   async reserveQuestion(channelId: string, factIds: string[], reservationId: string) {
     return this.db.runTransaction(async (tx) => {

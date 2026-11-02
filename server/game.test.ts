@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { GameEngine, GameError } from './game.js';
 import { MemoryStore } from './store.js';
 import { GameAI, validateText } from './ai.js';
+import { QUESTIONS } from './questions.js';
 
 function fixture() {
   let time = 1_000_000;
@@ -122,15 +123,14 @@ test('repeat prevention reserves one fact per round even when workers race', asy
   const other = await f.store.reserveQuestion('channel', ['a', 'b', 'c'], 'next-round');
   assert.notEqual(other, reservations[0]);
   const ids = new Set<string>();
-  for (let i = 0; i < 10; i++) {
-    const { gameId } = await f.engine.createGame('real-channel', 'host', { mode: 'fact' });
+  for (let i = 0; i < QUESTIONS.filter(q => q.mode === 'fact').length; i++) {
+    const { gameId } = await f.engine.createGame('real-channel', 'host', { mode: 'fact', rounds: 1 });
     await f.engine.action(gameId, 'host', 'start');
     const fact = (await f.store.get(gameId))!.question!.factId;
     assert.equal(ids.has(fact), false);
     ids.add(fact);
   }
-  const { gameId } = await f.engine.createGame('real-channel', 'host', { mode: 'fact' });
-  await assert.rejects(f.engine.action(gameId, 'host', 'start'), {
+  await assert.rejects(f.engine.createGame('real-channel', 'host', { mode: 'fact', rounds: 1 }), {
     code: 'QUESTION_BANK_EXHAUSTED',
   });
 });

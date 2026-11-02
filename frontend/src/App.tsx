@@ -1,3 +1,4 @@
+import { TOPICS, roundCapacity, type Topic } from '../../shared/topics';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowDownLeft,
@@ -79,9 +80,12 @@ type Game = {
   canControl?: boolean;
   ownSubmission?: { text: string; updatedAt: number };
   config?: Config;
+  finishReason?: string;
 };
-type Config = { mode: Mode; rounds: number; submissionSeconds: number; deceptionSeconds: number };
+type Config = { topic: Topic; mode: Mode; rounds: number; submissionSeconds: number; deceptionSeconds: number };
+type TopicCatalog = { topics: { id: Topic; available: { fact: number; definition: number } }[] };
 const defaultConfig: Config = {
+  topic: 'anything',
   mode: 'fact',
   rounds: 5,
   submissionSeconds: 30,
@@ -172,6 +176,23 @@ function App() {
   const [tab, setTab] = useState('overview');
   const [modal, setModal] = useState(false);
   const [config, setConfig] = useState<Config>(defaultConfig);
+  const [catalog, setCatalog] = useState<TopicCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState('');
+  const pack = catalog?.topics.find(t => t.id === config.topic);
+  const maxRounds = pack ? roundCapacity(config.mode, pack.available) : 10;
+  useEffect(() => {
+    if (!modal) return;
+    let active = true;
+    setCatalogError('');
+    api<TopicCatalog>('/api/catalog').then(value => { if (active) setCatalog(value); })
+      .catch(() => { if (active) setCatalogError('Couldn’t check available rounds. Close and try again.'); });
+    return () => { active = false; };
+  }, [modal, me.user?.id]);
+  useEffect(() => {
+    if (catalog && config.rounds > maxRounds && maxRounds > 0) {
+      setConfig(c => ({ ...c, rounds: maxRounds >= 5 ? 5 : maxRounds >= 3 ? 3 : maxRounds }));
+    }
+  }, [catalog, maxRounds, config.rounds]);
   const [working, setWorking] = useState(false);
   const [toast, setToast] = useState('');
   const [help, setHelp] = useState(false);
@@ -493,7 +514,7 @@ function App() {
               Choose your game<span>.</span>
             </h2>
             <p className="modal-intro">
-              Pick a mode and play. The show runs automatically.
+              Pick a mode, choose a topic, and play.
             </p>
             <label className="field-label">Game mode</label>
             <div className="mode-select">
@@ -509,13 +530,29 @@ function App() {
                 </button>
               ))}
             </div>
+            <fieldset className="topic-picker">
+              <legend className="field-label">Pick your topic</legend>
+              <div className="topic-grid">
+                {TOPICS.map(topic => <button type="button" key={topic.id}
+                  aria-pressed={config.topic === topic.id}
+                  className={config.topic === topic.id ? 'selected' : ''}
+                  onClick={() => setConfig(c => ({ ...c, topic: topic.id }))}>
+                  <span className="topic-icon" aria-hidden="true">{topic.icon}</span>
+                  <span><strong>{topic.label}</strong><small>{topic.description}</small></span>
+                  {config.topic === topic.id && <CheckCircle2 size={15} />}
+                </button>)}
+              </div>
+            </fieldset>
+            {catalogError && <p role="alert" className="topic-capacity">{catalogError}</p>}
+            {catalog && maxRounds < 10 && <p className="topic-capacity" role="status">{maxRounds ? `${maxRounds} fresh rounds available in this mode. Both facts and words follow your topic.` : 'You’ve cleared this pack! Choose another topic or mode.'}</p>}
             <p className="setup-summary">{config.rounds} rounds · Chat writes for {config.submissionSeconds}s · You choose in {config.deceptionSeconds}s</p>
             <details className="customize-game"><summary>Customize game</summary>
             <label className="field-label">Number of rounds</label>
             <div className="segmented">
-              {[3, 5, 10].map((n) => (
+              {[...new Set([...(maxRounds > 0 && maxRounds < 3 ? [maxRounds] : []), 3, 5, 10])].map((n) => (
                 <button
                   key={n}
+                  disabled={n > maxRounds}
                   className={config.rounds === n ? 'selected' : ''}
                   onClick={() => setConfig((c) => ({ ...c, rounds: n }))}
                 >
@@ -565,7 +602,7 @@ function App() {
             <button
               className="button button-dark full-width"
               onClick={create}
-              disabled={working || !meLoaded}
+              disabled={working || !meLoaded || !catalog || !!catalogError || maxRounds < config.rounds}
             >
               {working ? <LoaderCircle size={18} className="spin" /> : <Radio size={18} />}{' '}
               {working
@@ -1060,7 +1097,7 @@ function GameRoom({
               <span>.</span>
             </h1>
             <p>
-              {modeName} <span>·</span> {game.totalRounds} rounds <span>·</span>{' '}
+              {modeName} <span>·</span> {TOPICS.find(t => t.id === game.config?.topic)?.label || 'Anything Goes'} <span>·</span> {game.totalRounds} rounds <span>·</span>{' '}
               {game.aiMode === 'demo' ||
               game.aiMode === 'fallback' ||
               (me.demoEnabled && !me.aiConfigured)
@@ -1212,6 +1249,7 @@ function GameRoom({
               </div>
             ) : phase === 'finished' ? (
               <div className="finished-content">
+                {game.finishReason && <p>{game.finishReason}</p>}
                 <GameMascot phase="finished" chatWon={chatWon} large />
                 <h2>
                   {game.scores.chat === game.scores.streamer

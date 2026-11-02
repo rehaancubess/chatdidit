@@ -4,7 +4,7 @@
 
 A multiplayer deception game for Twitch: viewers privately submit convincing lies, the server mixes four with one genuine answer, and the streamer tries to spot the truth. Built with Codex, TypeScript, React, Google Cloud and the OpenAI API.
 
-**[Open the deployed demo](https://chatdidit-1077729822037.us-central1.run.app)**. The demo uses sample selection until an OpenAI API key is configured; Twitch registration and credentials are separate setup steps.
+**[Open the deployed demo](https://chatdidit-1077729822037.us-central1.run.app)**. The deployed demo has OpenAI selection and Twitch broadcaster sign-in configured. The native Extension is installed on the test channel in Local Test; public Twitch release is pending. Judges can use the standalone demo and viewer link without Extension allowlisting.
 
 ## Run locally
 
@@ -38,7 +38,7 @@ Reveal sounds are optional and off by default; use **Sound off/on** to enable th
 | `/extension/panel.html` | Native Twitch viewer panel for Local Test |
 | `/api/health` | Process health |
 
-The panel/config/live-config assets are supplied in `extension/`. Follow [Twitch setup](docs/TWITCH_SETUP.md) to register an application and Extension, configure redirects and backend allowlists, and supply the shared secret. This repository does not claim that an Extension has been registered, reviewed, or activated.
+The panel/config/live-config assets are supplied in `extension/`. Follow [Twitch setup](docs/TWITCH_SETUP.md) to register an application and Extension, configure redirects and backend allowlists, and supply the shared secret. The native Panel/Mobile Extension is registered and active on the test channel in Local Test. It has not completed public Twitch review; see the verified setup status in the Twitch guide.
 
 ## OpenAI setup
 
@@ -86,10 +86,10 @@ Run a complete demo round over HTTP with `SMOKE_URL=<origin> node --import tsx s
 
 Only the server holds genuine answers and option correctness. Public serializers expose neither sources nor answer identity before reveal. Private submissions are separate from public state. Twitch Extension JWTs bind a signed identity to the exact channel. State transitions use compare-and-set transactions; submitting a lie never writes a shared game/counter document. Timers use server timestamps; client countdowns are display-only. EventSub uses raw-byte HMAC validation, replay prevention and timestamp checks.
 
-The seed bank contains 20 curated questions. Channel history reserves canonical fact IDs and refuses to recycle them after exhaustion. A full ten-round match consumes ten questions in the chosen mode. The application needs additional reviewed question packs for repeated long-term use.
+The seed bank contains 53 curated questions across Gaming, Movies, Weird Facts, History, and Science; Anything Goes combines the full bank. Topics apply to facts and definitions, including alternating Mixed Bag rounds. Every topic starts with at least five facts and five definitions. Channel history reserves canonical fact IDs across topics and modes, so the quick-start picker only offers match lengths supported by fresh questions. More reviewed packs are needed for repeated long-term use. See [topic content notes](docs/TOPIC_CONTENT.md).
 
 ## Assets and hackathon delivery
 
-Three original raster illustrations were generated with built-in ImageGen and are checked into `frontend/public/assets/`. Their prompts are recorded in `docs/ASSETS.json`. Interface icons use Lucide. No paid fonts, music, or third-party footage are required.
+Original raster illustrations and a mascot atlas were generated with built-in ImageGen and are checked into `frontend/public/assets/`. Their prompts are recorded in `docs/ASSETS.json`. Interface icons use Lucide. No paid fonts, music, or third-party footage are required.
 
-The hackathon still requires a repository URL, an English description, this build's Codex session ID, and a public YouTube demonstration under three minutes showing the app functioning on Twitch and how Codex was used. No submission, video upload, or real Twitch account configuration is performed automatically.
+The hackathon project story and current test limitations are documented in [the submission notes](docs/DEVPOST_SUBMISSION.md). The demo video is [available on YouTube](https://youtu.be/TAPV3dR7jAo). For a minimal judging flow, open the deployed demo, choose a mode and topic, create a room, share its viewer link with a separate browser identity, and start the show. Demo audience controls are available for local exploration. Native Extension access remains limited to Twitch Local Test allowlisted accounts.
